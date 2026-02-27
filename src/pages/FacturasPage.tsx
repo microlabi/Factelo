@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
+import { toast } from "sonner";
 import {
   Plus,
   FileText,
@@ -149,13 +150,22 @@ export function FacturasPage() {
     setActionError(null);
     setPdfLoadingId(f.id);
     try {
-      await api.generarPdf(f.id, empresa.id);
+      const ruta = await api.generarPdf(f.id, empresa.id);
+      toast.success(`PDF generado: ${f.serie_prefijo}-${String(f.numero).padStart(4, "0")}`, {
+        description: ruta,
+        action: {
+          label: "Abrir",
+          onClick: () => api.abrirArchivo(ruta),
+        },
+        duration: 8000,
+      });
     } catch (err: unknown) {
-      setActionError(
+      const msg =
         typeof err === "object" && err !== null && "message" in err
           ? (err as { message: string }).message
-          : String(err)
-      );
+          : String(err);
+      setActionError(msg);
+      toast.error("Error al generar PDF", { description: msg });
     } finally {
       setPdfLoadingId(null);
     }

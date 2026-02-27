@@ -7,6 +7,8 @@ use tauri::{path::BaseDirectory, Manager};
 use tera::{Context, Tera};
 use url::Url;
 
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+
 use crate::{
     db::DbPool,
     error::{ApiError, AppError, AppResult, CommandResult},
@@ -62,6 +64,10 @@ struct InvoiceTemplateData {
     hash_registro: String,
     hash_anterior: String,
     items: Vec<InvoiceItemTemplateData>,
+    /// SVG del QR de verificación AEAT como Data URL (puede estar vacío si falla)
+    qr_svg_data_url: String,
+    /// URL completa del QR de notariado AEAT
+    qr_url: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -78,6 +84,7 @@ pub async fn generate_pdf(
     app: tauri::AppHandle,
     state: tauri::State<'_, DbPool>,
     factura_id: i32,
+    _empresa_id: Option<i64>,
 ) -> CommandResult<String> {
     generate_pdf_internal(app, &state, factura_id)
         .await
@@ -104,7 +111,22 @@ async fn generate_pdf_internal(
         ));
     }
 
-    let html = render_invoice_html(&invoice, &lines)?;
+    // ── QR de verificación tributaria AEAT (RD 1007/2023) ─────────────────
+    let importe = format!("{:.2}", invoice.total as f64 / 100.0);
+    let numserie = format!("{}{:04}", invoice.serie_prefijo, invoice.numero);
+    let hash_corto = &invoice.hash_registro[..invoice.hash_registro.len().min(8)];
+    let qr_url = format!(
+        "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/v1/qr/notariado\
+         ?nif={nif}&numserie={numserie}&fecha={fecha}&importe={importe}&hash={hash_corto}",
+        nif = invoice.empresa_nif,
+        fecha = invoice.fecha_emision,
+    );
+    let qr_svg_data_url = match crate::audit::qr_to_svg(&qr_url) {
+        Ok(svg) => format!("data:image/svg+xml;base64,{}", B64.encode(svg.as_bytes())),
+        Err(_) => String::new(),
+    };
+
+    let html = render_invoice_html(&invoice, &lines, &qr_svg_data_url, &qr_url)?;
     let output_path = resolve_output_path(&app, &invoice)?;
 
     let output_path_for_job = output_path.clone();
@@ -173,7 +195,12 @@ async fn fetch_invoice_lines(db: &DbPool, factura_id: i64) -> AppResult<Vec<Invo
     Ok(rows)
 }
 
-fn render_invoice_html(invoice: &InvoiceRow, lines: &[InvoiceLineRow]) -> AppResult<String> {
+fn render_invoice_html(
+    invoice: &InvoiceRow,
+    lines: &[InvoiceLineRow],
+    qr_svg_data_url: &str,
+    qr_url: &str,
+) -> AppResult<String> {
     let items = lines
         .iter()
         .map(|line| InvoiceItemTemplateData {
@@ -212,6 +239,8 @@ fn render_invoice_html(invoice: &InvoiceRow, lines: &[InvoiceLineRow]) -> AppRes
             .clone()
             .unwrap_or_else(|| "GENESIS".to_string()),
         items,
+        qr_svg_data_url: qr_svg_data_url.to_string(),
+        qr_url: qr_url.to_string(),
     };
 
     let mut context = Context::new();
@@ -356,4 +385,35 @@ fn sanitize_filename_segment(input: &str) -> String {
     }
 
     clean
+}
+
+/// Abre un archivo con la aplicación predeterminada del sistema operativo.
+/// En Windows usa `start`, en macOS `open`, en Linux `xdg-open`.
+#[tauri::command]
+pub async fn abrir_archivo(ruta: String) -> CommandResult<()> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .arg("/c")
+            .arg("start")
+            .arg("")
+            .arg(&ruta)
+            .spawn()
+            .map_err(|e| ApiError::from(AppError::Internal(format!("No se pudo abrir el archivo: {e}"))))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&ruta)
+            .spawn()
+            .map_err(|e| ApiError::from(AppError::Internal(format!("No se pudo abrir el archivo: {e}"))))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&ruta)
+            .spawn()
+            .map_err(|e| ApiError::from(AppError::Internal(format!("No se pudo abrir el archivo: {e}"))))?;
+    }
+    Ok(())
 }

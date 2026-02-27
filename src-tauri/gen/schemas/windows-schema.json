@@ -2187,6 +2187,12 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Abre un archivo con la aplicación predeterminada del SO",
+          "type": "string",
+          "const": "allow-abrir-archivo",
+          "markdownDescription": "Abre un archivo con la aplicación predeterminada del SO"
+        },
+        {
           "description": "Crea un cliente",
           "type": "string",
           "const": "allow-crear-cliente",
@@ -2227,6 +2233,18 @@
           "type": "string",
           "const": "allow-generar-facturae-xml",
           "markdownDescription": "Permite invocar el comando generar_facturae_xml"
+        },
+        {
+          "description": "Exporta el fichero XML de inspección tributaria",
+          "type": "string",
+          "const": "allow-generar-fichero-inspeccion",
+          "markdownDescription": "Exporta el fichero XML de inspección tributaria"
+        },
+        {
+          "description": "Genera el QR técnico AEAT de notariado para una factura",
+          "type": "string",
+          "const": "allow-generar-qr-legal",
+          "markdownDescription": "Genera el QR técnico AEAT de notariado para una factura"
         },
         {
           "description": "Permite invocar el comando generate_pdf",
@@ -2275,6 +2293,12 @@
           "type": "string",
           "const": "allow-obtener-series",
           "markdownDescription": "Lista las series de facturación de una empresa"
+        },
+        {
+          "description": "Verifica la integridad de la cadena de hashes del registro inalterable",
+          "type": "string",
+          "const": "allow-verificar-integridad-bd",
+          "markdownDescription": "Verifica la integridad de la cadena de hashes del registro inalterable"
         },
         {
           "description": "Verifica si existe empresa y serie de facturación",

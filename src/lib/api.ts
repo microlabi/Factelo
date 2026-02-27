@@ -281,6 +281,12 @@ export const api = {
   generarPdf: (facturaId: number, empresaId: number): Promise<string> =>
     invoke("generate_pdf", { facturaId, empresaId }),
 
+  /**
+   * Abre un archivo local con la aplicación predeterminada del SO.
+   */
+  abrirArchivo: (ruta: string): Promise<void> =>
+    invoke("abrir_archivo", { ruta }),
+
   // ── Registro Inalterable (Veri*factu / Camino 2) ───────────────────────────
 
   /**

@@ -35,6 +35,7 @@ fn main() {
             commands::obtener_dashboard_stats,
             commands::listar_facturas,
             pdf::generate_pdf,
+            pdf::abrir_archivo,
             // ── Registro Inalterable (Veri*factu / Camino 2) ─────────────
             audit::verificar_integridad_bd,
             audit::generar_qr_legal,

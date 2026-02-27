@@ -77,3 +77,23 @@ commands.allow = ["firmar_factura_silenciosa"]
 identifier = "allow-listar-facturas"
 description = "Lista todas las facturas de una empresa"
 commands.allow = ["listar_facturas"]
+
+[[permission]]
+identifier = "allow-generar-qr-legal"
+description = "Genera el QR técnico AEAT de notariado para una factura"
+commands.allow = ["generar_qr_legal"]
+
+[[permission]]
+identifier = "allow-abrir-archivo"
+description = "Abre un archivo con la aplicación predeterminada del SO"
+commands.allow = ["abrir_archivo"]
+
+[[permission]]
+identifier = "allow-verificar-integridad-bd"
+description = "Verifica la integridad de la cadena de hashes del registro inalterable"
+commands.allow = ["verificar_integridad_bd"]
+
+[[permission]]
+identifier = "allow-generar-fichero-inspeccion"
+description = "Exporta el fichero XML de inspección tributaria"
+commands.allow = ["generar_fichero_inspeccion"]

@@ -264,7 +264,7 @@ async fn generar_qr_interno(
 
 /// Genera un SVG con el módulo QR codificado.
 /// Usa la crate `qrcodegen` que es pure-Rust sin dependencias de imagen.
-fn qr_to_svg(data: &str) -> AppResult<String> {
+pub fn qr_to_svg(data: &str) -> AppResult<String> {
     use qrcodegen::{QrCode, QrCodeEcc};
 
     let qr = QrCode::encode_text(data, QrCodeEcc::Medium)
