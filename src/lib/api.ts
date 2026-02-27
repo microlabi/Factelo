@@ -178,6 +178,28 @@ export interface FacturaRow {
   hash_registro: string;
 }
 
+// ─── Registro Inalterable (Veri*factu / Camino 2) ────────────────────────────
+
+export interface ResultadoIntegridad {
+  integra: boolean;
+  total_eventos: number;
+  primer_evento: string | null;
+  ultimo_evento: string | null;
+  errores: string[];
+}
+
+export interface QrLegalResponse {
+  /** Data URL SVG lista para <img src="..."> */
+  svg_data_url: string;
+  /** URL completa del QR de notariado AEAT */
+  url: string;
+}
+
+export interface FicheroInspeccionResponse {
+  ruta: string;
+  total_eventos: number;
+}
+
 // ─── API ─────────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -258,4 +280,30 @@ export const api = {
   // ── PDF ────────────────────────────────────────────────────────────────────
   generarPdf: (facturaId: number, empresaId: number): Promise<string> =>
     invoke("generate_pdf", { facturaId, empresaId }),
+
+  // ── Registro Inalterable (Veri*factu / Camino 2) ───────────────────────────
+
+  /**
+   * Verifica la integridad de la cadena de hashes de log_eventos_seguros.
+   * Debe llamarse en cada arranque y antes de exportar.
+   */
+  verificarIntegridadBd: (empresaId: number): Promise<ResultadoIntegridad> =>
+    invoke("verificar_integridad_bd", { empresaId }),
+
+  /**
+   * Genera el QR técnico de notariado AEAT para la factura indicada.
+   * Devuelve el SVG codificado como Data URL y la URL de verificación.
+   */
+  generarQrLegal: (facturaId: number, empresaId: number): Promise<QrLegalResponse> =>
+    invoke("generar_qr_legal", { facturaId, empresaId }),
+
+  /**
+   * Exporta el fichero XML de inspección tributaria del año indicado.
+   * Incluye todos los eventos de log encadenados + estado de integridad.
+   */
+  generarFicheroInspeccion: (
+    empresaId: number,
+    anio: number
+  ): Promise<FicheroInspeccionResponse> =>
+    invoke("generar_fichero_inspeccion", { empresaId, anio }),
 };

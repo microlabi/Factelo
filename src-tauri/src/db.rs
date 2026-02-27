@@ -61,8 +61,9 @@ async fn apply_security_pragmas(pool: &DbPool, encryption_key: Option<&str>) -> 
         .context("No se pudo aplicar PRAGMA trusted_schema")?;
 
     if let Some(key) = encryption_key.filter(|value| !value.trim().is_empty()) {
-        let escaped = key.replace('\'', "''");
-        let pragma_key = format!("PRAGMA key = '{escaped}';");
+        // SQLCipher acepta la clave en formato hex literal: PRAGMA key = "x'hexstring'";
+        // Los 32 bytes se pasan como 64 caracteres hexadecimales.
+        let pragma_key = format!("PRAGMA key = \"x'{key}'\";");
         sqlx::query(&pragma_key)
             .execute(pool)
             .await
@@ -75,4 +76,88 @@ async fn apply_security_pragmas(pool: &DbPool, encryption_key: Option<&str>) -> 
     }
 
     Ok(())
+}
+
+// ─── Restricción de permisos del directorio de datos ──────────────────────────
+
+/// Aplica permisos restrictivos al directorio donde se almacena la base de
+/// datos para que únicamente el usuario actual (y SYSTEM en Windows) pueda
+/// acceder.
+///
+/// - **Windows**: usa `icacls` para revocar la herencia de ACLs y conceder
+///   control total solo al usuario actual y a SYSTEM.
+/// - **Unix/macOS**: establece `0700` (rwx------) con `chmod`.
+///
+/// Los fallos no son fatales: se registran como advertencia y la aplicación
+/// sigue funcionando (la protección SQLCipher sigue activa).
+pub fn restrict_directory_permissions(dir: &Path) {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+
+        // CREATE_NO_WINDOW: evita que aparezca una ventana de consola
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+        let dir_str = dir.to_string_lossy().into_owned();
+
+        // Nombre de usuario del propietario de la sesión actual
+        let username = std::env::var("USERNAME").unwrap_or_else(|_| "CURRENT_USER".to_string());
+
+        // Paso 1 – restablecer ACLs al estado predeterminado (limpiar residuales)
+        let _ = std::process::Command::new("icacls")
+            .args([&dir_str, "/reset", "/T", "/Q"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+
+        // Paso 2 – revocar herencia (no propagar los permisos del directorio padre)
+        let step2 = std::process::Command::new("icacls")
+            .args([&dir_str, "/inheritance:r", "/Q"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+
+        if let Err(e) = &step2 {
+            tracing::warn!("icacls /inheritance:r falló: {e}");
+        }
+
+        // Paso 3 – conceder control total al usuario actual (hereda a hijos)
+        let user_grant = format!("{username}:(OI)(CI)F");
+        let step3 = std::process::Command::new("icacls")
+            .args([&dir_str, "/grant:r", &user_grant, "/Q"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+
+        if let Err(e) = &step3 {
+            tracing::warn!("icacls /grant:r (usuario) falló: {e}");
+        }
+
+        // Paso 4 – conceder control total a SYSTEM (Windows lo necesita internamente)
+        let step4 = std::process::Command::new("icacls")
+            .args([&dir_str, "/grant:r", "SYSTEM:(OI)(CI)F", "/Q"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+
+        if let Err(e) = &step4 {
+            tracing::warn!("icacls /grant:r (SYSTEM) falló: {e}");
+        }
+
+        tracing::info!(
+            "Permisos del directorio de datos restringidos a '{}' y SYSTEM.",
+            username
+        );
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        match std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)) {
+            Ok(()) => tracing::info!(
+                "Permisos del directorio de datos: 0700 (rwx------): {:?}",
+                dir
+            ),
+            Err(e) => tracing::warn!(
+                "No se pudieron aplicar permisos 0700 al directorio {:?}: {e}",
+                dir
+            ),
+        }
+    }
 }

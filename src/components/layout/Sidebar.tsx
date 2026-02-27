@@ -11,7 +11,6 @@ import {
   ChevronLeft,
   ChevronRight,
   TrendingUp,
-  Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -23,6 +22,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useSessionStore, selectEmpresa } from "@/stores/sessionStore";
+import { IntegrityStatusBadge } from "@/components/ui/IntegrityGuard";
 
 // ─── Definición de navegación ─────────────────────────────────────────────────
 
@@ -175,15 +175,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </nav>
       </ScrollArea>
 
-      {/* ── Pie: VeriFactu badge ───────────────────────────────────── */}
+      {/* ── Pie: estado de integridad del registro ────────────────── */}
       {!collapsed && (
         <div className="border-t border-sidebar-border p-3">
-          <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 dark:bg-emerald-950/30">
-            <Shield className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
-              Cumple VeriFactu
-            </span>
-          </div>
+          <IntegrityStatusBadge />
         </div>
       )}
 

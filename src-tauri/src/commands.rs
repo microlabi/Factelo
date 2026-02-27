@@ -249,6 +249,80 @@ async fn insert_factura_internal(
         .await?;
     }
 
+    // ── Insertar en log_eventos_seguros (encadenamiento SHA-256) ──────────────
+    //
+    // El hash_log encadena el hash de la factura con el hash del evento
+    // de log anterior para la misma empresa.  Así cualquier manipulación
+    // de la cadena es detectable recalculando desde GENESIS.
+    let previous_log_hash: Option<String> = sqlx::query(
+        r#"
+        SELECT hash_log
+        FROM log_eventos_seguros
+        WHERE empresa_id = ?1
+        ORDER BY id DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(input.empresa_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .map(|r| r.get::<String, _>("hash_log"));
+
+    let hash_anterior_log = previous_log_hash
+        .as_deref()
+        .unwrap_or("GENESIS")
+        .to_string();
+
+    let numero_serie_label = {
+        let prefijo: Option<String> = sqlx::query(
+            "SELECT prefijo FROM series_facturacion WHERE id = ?1 LIMIT 1",
+        )
+        .bind(input.serie_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .map(|r| r.get::<String, _>("prefijo"));
+        format!("{}-{:04}", prefijo.as_deref().unwrap_or(""), input.numero)
+    };
+
+    let timestamp_now = chrono::Utc::now()
+        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string();
+
+    let hash_log = crate::audit::calcular_hash_log(
+        &timestamp_now,
+        "ALTA",
+        input.empresa_id,
+        factura_id,
+        &numero_serie_label,
+        &hash_registro,
+        &hash_anterior_log,
+    );
+
+    sqlx::query(
+        r#"
+        INSERT INTO log_eventos_seguros (
+            timestamp,
+            tipo_evento,
+            empresa_id,
+            factura_id,
+            numero_serie,
+            hash_factura,
+            hash_anterior,
+            hash_log
+        )
+        VALUES (?1, 'ALTA', ?2, ?3, ?4, ?5, ?6, ?7)
+        "#,
+    )
+    .bind(&timestamp_now)
+    .bind(input.empresa_id)
+    .bind(factura_id)
+    .bind(&numero_serie_label)
+    .bind(&hash_registro)
+    .bind(&hash_anterior_log)
+    .bind(&hash_log)
+    .execute(&mut *tx)
+    .await?;
+
     tx.commit().await?;
 
     Ok(InsertFacturaResponse {
