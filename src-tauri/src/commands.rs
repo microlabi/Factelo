@@ -15,7 +15,7 @@ use crate::{
         Parties, Party, Tax, TaxAmount, TaxIdentification, TaxPeriod, TaxesOutputs,
     },
     error::{ApiError, AppError, AppResult, CommandResult},
-    xades::{sign_xml_xades, XadesSignInput},
+    xades::sign_xml_xades,
 };
 
 #[derive(Debug, Clone, Deserialize)]
@@ -385,7 +385,6 @@ struct FacturaeInvoiceRow {
     empresa_codigo_postal: String,
     empresa_poblacion: String,
     empresa_provincia: String,
-    empresa_cert_path: Option<String>,
     // Cliente
     cliente_nombre: String,
     cliente_nif: Option<String>,
@@ -419,9 +418,8 @@ pub async fn generar_facturae_xml(
     state: tauri::State<'_, DbPool>,
     factura_id: i64,
     empresa_id: i64,
-    cert_password: String,
 ) -> CommandResult<String> {
-    generar_facturae_xml_internal(app, &state, factura_id, empresa_id, cert_password)
+    generar_facturae_xml_internal(app, &state, factura_id, empresa_id)
         .await
         .map_err(ApiError::from)
 }
@@ -431,17 +429,10 @@ async fn generar_facturae_xml_internal(
     db: &DbPool,
     factura_id: i64,
     empresa_id: i64,
-    cert_password: String,
 ) -> AppResult<String> {
     if factura_id <= 0 || empresa_id <= 0 {
         return Err(AppError::Validation(
             "factura_id y empresa_id deben ser mayores que cero".to_string(),
-        ));
-    }
-
-    if cert_password.trim().is_empty() {
-        return Err(AppError::Validation(
-            "La contraseña del certificado es obligatoria".to_string(),
         ));
     }
 
@@ -461,7 +452,6 @@ async fn generar_facturae_xml_internal(
             COALESCE(e.codigo_postal, '00000') AS empresa_codigo_postal,
             COALESCE(e.poblacion, 'N/A') AS empresa_poblacion,
             COALESCE(e.provincia, 'N/A') AS empresa_provincia,
-            e.cert_path AS empresa_cert_path,
             c.nombre AS cliente_nombre,
             c.nif AS cliente_nif,
             c.direccion AS cliente_direccion,
@@ -517,21 +507,16 @@ async fn generar_facturae_xml_internal(
         ));
     }
 
-    let cert_path = invoice
-        .empresa_cert_path
-        .clone()
-        .ok_or_else(|| AppError::Certificate("La empresa no tiene cert_path configurado".to_string()))?;
+    // Obtener el HWND de la ventana principal para anclar el diálogo del SO
+    let hwnd = app
+        .get_webview_window("main")
+        .and_then(|w| w.hwnd().ok())
+        .map(|h| h.0 as isize);
 
     let facturae_doc = build_facturae_doc(&invoice, &lines)?;
 
     let unsigned_xml = facturae_to_xml(&facturae_doc)?;
-    let signed_or_unsigned = match sign_xml_xades(
-        &unsigned_xml,
-        &XadesSignInput {
-            cert_path,
-            cert_password,
-        },
-    ) {
+    let signed_or_unsigned = match sign_xml_xades(&unsigned_xml, hwnd) {
         Ok(signed) => signed,
         Err(AppError::NotImplemented(_)) => unsigned_xml,
         Err(error) => return Err(error),
@@ -600,7 +585,6 @@ async fn generar_facturae_autofirma_internal(
             COALESCE(e.codigo_postal, '00000') AS empresa_codigo_postal,
             COALESCE(e.poblacion, 'N/A') AS empresa_poblacion,
             COALESCE(e.provincia, 'N/A') AS empresa_provincia,
-            e.cert_path AS empresa_cert_path,
             c.nombre AS cliente_nombre,
             c.nif AS cliente_nif,
             c.direccion AS cliente_direccion,
@@ -759,6 +743,46 @@ fn find_autofirma_path() -> Option<std::path::PathBuf> {
         .iter()
         .map(std::path::PathBuf::from)
         .find(|p| p.exists())
+}
+
+// ─── firmar_factura_silenciosa ────────────────────────────────────────────────
+//
+// Genera el XML Facturae 3.2.x y firma en modo batch (sin GUI) usando
+// AutoFirma CLI con el certificado .p12/.pfx almacenado en la empresa y la
+// contraseña recibida desde el frontend.  Nunca guarda la contraseña.
+
+#[tauri::command]
+pub async fn firmar_factura_silenciosa(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, DbPool>,
+    factura_id: i64,
+    empresa_id: i64,
+) -> CommandResult<String> {
+    firmar_factura_silenciosa_internal(app, &state, factura_id, empresa_id)
+        .await
+        .map_err(ApiError::from)
+}
+
+async fn firmar_factura_silenciosa_internal(
+    app: tauri::AppHandle,
+    db: &DbPool,
+    factura_id: i64,
+    empresa_id: i64,
+) -> AppResult<String> {
+    // Delega en generar_facturae_xml_internal que:
+    // 1. Genera el XML Facturae sin firmar.
+    // 2. Llama a sign_xml_xades → muestra el diálogo nativo del SO para
+    //    elegir certificado → firma con NCrypt → inyecta <ds:Signature>.
+    let xml_path =
+        generar_facturae_xml_internal(app, db, factura_id, empresa_id).await?;
+
+    // Marcar la factura como firmada con la implementación XAdES nativa
+    sqlx::query("UPDATE facturas SET firma_app = 'XADES_NATIVO' WHERE id = ?1")
+        .bind(factura_id)
+        .execute(db)
+        .await?;
+
+    Ok(xml_path)
 }
 
 fn decimal_from_cents(cents: i64) -> rust_decimal::Decimal {

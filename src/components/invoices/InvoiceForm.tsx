@@ -22,6 +22,8 @@ import {
   GitBranch,
   UserCheck,
   AlertTriangle,
+  ShieldCheck,
+  PenLine,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -62,6 +64,14 @@ import {
 } from "@/components/ui/select";
 import { useTauriQuery } from "@/hooks/useTauriCommand";
 import { InvoiceLineRow } from "./InvoiceLineRow";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface InsertFacturaInput {
   empresa_id: number;
@@ -265,10 +275,10 @@ function TotalsPanel({
           <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-amber-600 dark:text-amber-400" />
           <div>
             <p className="font-medium text-amber-700 dark:text-amber-400">
-              AutoFirma abierto
+              Aplicando firma XAdES…
             </p>
             <p className="mt-0.5 text-[11px] text-amber-600/80 dark:text-amber-500">
-              Selecciona tu certificado (FNMT, DNIe…) y confirma la firma en AutoFirma.
+              Procesando el certificado y firmando el XML Facturae 3.2.x…
             </p>
           </div>
         </div>
@@ -287,7 +297,7 @@ function TotalsPanel({
             {phase.xmlGenerated && (
               <>
                 <p className="mt-1 text-[11px] text-emerald-600/80 dark:text-emerald-500">
-                  ✓ XML Facturae 3.2.x firmado con AutoFirma
+                  ✓ XML Facturae 3.2.x firmado (AutoFirma batch)
                 </p>
                 {phase.xmlPath && (
                   <p className="mt-1 flex items-center gap-1 text-[11px] text-emerald-600/80 dark:text-emerald-500 break-all">
@@ -332,9 +342,9 @@ function TotalsPanel({
             <Save className="size-4" />
           )}
           {phase.type === "generating_xml"
-            ? "Firmando con AutoFirma…"
+            ? "Aplicando firma XAdES…"
             : esEntidadPublica
-            ? "Guardar y Generar Facturae"
+            ? "Guardar y Firmar"
             : "Guardar y Emitir"}
         </Button>
       </div>
@@ -383,6 +393,14 @@ export function InvoiceForm() {
   const empresa = useSessionStore(selectEmpresa);
   const navigate = useNavigate();
   const [submitPhase, setSubmitPhase] = useState<SubmitPhase>({ type: "idle" });
+
+  // ── Estado del dialog de firma XAdES (almacén del sistema) ──────────
+  type SignUIPhase = "confirm" | "signing" | "success" | "error";
+  const [signDialogOpen, setSignDialogOpen] = useState(false);
+  const [signUIPhase, setSignUIPhase] = useState<SignUIPhase>("confirm");
+  const [signXmlPath, setSignXmlPath] = useState("");
+  const [signError, setSignError] = useState("");
+  const [pendingFormData, setPendingFormData] = useState<InvoiceFormValues | null>(null);
 
   // ── Datos reales desde el backend ────────────────────────────────────
   const { data: clientes = [] } = useTauriQuery<ClienteRow[]>(
@@ -477,17 +495,29 @@ export function InvoiceForm() {
       insertResponse = await api.insertarFactura(payload);
     } catch (err) {
       setSubmitPhase({ type: "error", error: err as ApiError | string });
+      // Si el dialog de firma está abierto, refleja el error dentro de él
+      if (estado === "EMITIDA" && data.es_entidad_publica) {
+        const msg =
+          typeof err === "string"
+            ? err
+            : (err as ApiError)?.message ?? "Error al guardar la factura";
+        setSignError(msg);
+        setSignUIPhase("error");
+      }
       return;
     }
 
-    // Genera Facturae XML solo si es entidad pública y el usuario pulsó "Guardar y Generar"
+    // Genera Facturae XML + firma XAdES si es entidad pública
     if (estado === "EMITIDA" && data.es_entidad_publica) {
       setSubmitPhase({ type: "generating_xml" });
+      setSignUIPhase("signing");
       try {
-        const xmlPath = await api.generarFacturaeAutofirma(
+        const xmlPath = await api.firmarFacturaSilenciosa(
           insertResponse.id,
           empresa.id
         );
+        setSignXmlPath(xmlPath);
+        setSignUIPhase("success");
         setSubmitPhase({
           type: "success",
           response: insertResponse,
@@ -495,9 +525,13 @@ export function InvoiceForm() {
           xmlPath,
         });
         queryClient.invalidateQueries({ queryKey: ["facturas"] });
-        // Redirige a la lista de facturas tras 2 s
-        setTimeout(() => navigate("/facturas"), 2000);
       } catch (err) {
+        const msg =
+          typeof err === "string"
+            ? err
+            : (err as ApiError)?.message ?? "Error al firmar la factura";
+        setSignError(msg);
+        setSignUIPhase("error");
         setSubmitPhase({ type: "error", error: err as ApiError | string });
       }
     } else {
@@ -524,7 +558,24 @@ export function InvoiceForm() {
     submitPhase.type === "saving" || submitPhase.type === "generating_xml";
 
   const onSaveDraft = handleSubmit((data) => submitInvoice(data, "BORRADOR"));
-  const onSaveAndGenerate = handleSubmit((data) => submitInvoice(data, "EMITIDA"));
+  const onSaveAndGenerate = handleSubmit((data) => {
+    if (data.es_entidad_publica) {
+      // Entidad pública → abre modal de confirmación; el selector de
+      // certificados del SO se mostrará al pulsar "Iniciar firma"
+      setPendingFormData(data);
+      setSignError("");
+      setSignXmlPath("");
+      setSignUIPhase("confirm");
+      setSignDialogOpen(true);
+    } else {
+      submitInvoice(data, "EMITIDA");
+    }
+  });
+
+  async function handleStartSign() {
+    if (!pendingFormData) return;
+    await submitInvoice(pendingFormData, "EMITIDA");
+  }
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -1051,6 +1102,186 @@ export function InvoiceForm() {
           />
         </div>
       </div>
+      {/* ── Dialog de firma XAdES (almacén del sistema) ──────────────── */}
+      <Dialog
+        open={signDialogOpen}
+        onOpenChange={(open) => {
+          if (
+            !open &&
+            (signUIPhase === "confirm" ||
+              signUIPhase === "success" ||
+              signUIPhase === "error")
+          ) {
+            setSignDialogOpen(false);
+          }
+        }}
+      >
+        <DialogContent
+          className="sm:max-w-md"
+          onInteractOutside={(e) => {
+            if (signUIPhase === "signing") e.preventDefault();
+          }}
+          onEscapeKeyDown={(e) => {
+            if (signUIPhase === "signing") e.preventDefault();
+          }}
+        >
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div
+                className={cn(
+                  "flex size-8 items-center justify-center rounded-lg",
+                  signUIPhase === "success"
+                    ? "bg-emerald-100 dark:bg-emerald-950/50"
+                    : signUIPhase === "error"
+                    ? "bg-destructive/10"
+                    : "bg-primary/10"
+                )}
+              >
+                {signUIPhase === "success" ? (
+                  <ShieldCheck className="size-4 text-emerald-600 dark:text-emerald-400" />
+                ) : signUIPhase === "error" ? (
+                  <AlertCircle className="size-4 text-destructive" />
+                ) : signUIPhase === "signing" ? (
+                  <Loader2 className="size-4 text-primary animate-spin" />
+                ) : (
+                  <PenLine className="size-4 text-primary" />
+                )}
+              </div>
+              <div>
+                <DialogTitle className="text-sm font-semibold">
+                  {signUIPhase === "success"
+                    ? "Factura firmada correctamente"
+                    : signUIPhase === "error"
+                    ? "Error al firmar la factura"
+                    : signUIPhase === "signing"
+                    ? "Firmando con certificado del sistema…"
+                    : "Firmar con certificado digital"}
+                </DialogTitle>
+                <DialogDescription className="text-xs mt-0.5">
+                  {signUIPhase === "confirm" &&
+                    "Se usará el almacén de certificados instalados en Windows."}
+                  {signUIPhase === "signing" &&
+                    "Guardando factura y aplicando firma XAdES-EPES…"}
+                  {signUIPhase === "success" &&
+                    "El XML Facturae 3.2.x ha sido firmado y guardado."}
+                  {signUIPhase === "error" &&
+                    "Comprueba que el certificado y el dispositivo están disponibles."}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-3 py-1">
+            {/* Fase: confirmar */}
+            {signUIPhase === "confirm" && (
+              <div className="flex flex-col gap-2.5">
+                <div className="flex items-start gap-2.5 rounded-lg border bg-muted/30 px-3 py-3 text-xs text-foreground">
+                  <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />
+                  <div className="flex flex-col gap-1">
+                    <p className="font-medium">
+                      Se abrirá el selector de certificados de Windows
+                    </p>
+                    <p className="text-muted-foreground leading-relaxed">
+                      Selecciona tu certificado digital (DNIe, FNMT, tarjeta
+                      corporativa…) en el diálogo del sistema operativo y confirma.
+                      La firma se aplicará automáticamente.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-1.5 rounded-md bg-muted/50 px-2.5 py-2 text-[11px] text-muted-foreground">
+                  <AlertCircle className="mt-0.5 size-3 shrink-0" />
+                  <span>
+                    Asegúrate de que el dispositivo (tarjeta inteligente, DNIe,
+                    token USB) está conectado antes de continuar.
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Fase: firmando */}
+            {signUIPhase === "signing" && (
+              <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-400">
+                <Loader2 className="size-3.5 shrink-0 animate-spin" />
+                <span>
+                  El selector de certificados de Windows se abrirá en breve.
+                  Selecciona tu certificado y acepta para continuar.
+                </span>
+              </div>
+            )}
+
+            {/* Fase: éxito */}
+            {signUIPhase === "success" && (
+              <>
+                <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-400">
+                  <CheckCircle2 className="size-3.5 shrink-0" />
+                  <span className="font-medium">
+                    Firma XAdES-EPES aplicada correctamente
+                  </span>
+                </div>
+                {signXmlPath && (
+                  <div className="flex items-start gap-1.5 rounded-md bg-muted/50 px-2.5 py-2 text-[11px] text-muted-foreground">
+                    <FolderOpen className="mt-0.5 size-3 shrink-0" />
+                    <span className="break-all font-mono">{signXmlPath}</span>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Fase: error */}
+            {signUIPhase === "error" && signError && (
+              <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-xs text-destructive">
+                <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                <span className="break-words">{signError}</span>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            {signUIPhase === "confirm" && (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSignDialogOpen(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={handleStartSign}
+                >
+                  <PenLine className="size-3.5" />
+                  Iniciar firma
+                </Button>
+              </>
+            )}
+            {(signUIPhase === "success" || signUIPhase === "error") && (
+              <Button
+                type="button"
+                size="sm"
+                variant={signUIPhase === "error" ? "outline" : "default"}
+                className="gap-1.5"
+                onClick={() => {
+                  setSignDialogOpen(false);
+                  if (signUIPhase === "success") navigate("/facturas");
+                }}
+              >
+                {signUIPhase === "success" ? (
+                  <>
+                    <CheckCircle2 className="size-3.5" />
+                    Ver facturas
+                  </>
+                ) : (
+                  "Cerrar"
+                )}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </FormProvider>
   );
 }

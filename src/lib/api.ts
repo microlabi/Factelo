@@ -243,6 +243,18 @@ export const api = {
   ): Promise<string> =>
     invoke("generar_facturae_autofirma", { facturaId, empresaId }),
 
+  /**
+   * Genera y firma el XML Facturae 3.2.x en modo batch (silencioso), sin
+   * abrir la GUI de AutoFirma. Utiliza el certificado .p12/.pfx configurado
+   * firma XAdES-EPES usando el almacén de certificados del sistema operativo.
+   * Muestra el diálogo nativo de Windows para seleccionar el certificado.
+   */
+  firmarFacturaSilenciosa: (
+    facturaId: number,
+    empresaId: number
+  ): Promise<string> =>
+    invoke("firmar_factura_silenciosa", { facturaId, empresaId }),
+
   // ── PDF ────────────────────────────────────────────────────────────────────
   generarPdf: (facturaId: number, empresaId: number): Promise<string> =>
     invoke("generate_pdf", { facturaId, empresaId }),

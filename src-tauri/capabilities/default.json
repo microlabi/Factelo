@@ -22,6 +22,7 @@
     "allow-obtener-dashboard-stats",
     "allow-listar-facturas",
     "allow-generar-facturae-autofirma",
+    "allow-firmar-factura-silenciosa",
     "fs:allow-write",
     "fs:allow-read",
     "dialog:allow-save",

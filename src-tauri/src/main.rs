@@ -22,6 +22,7 @@ fn main() {
             commands::insert_factura,
             commands::generar_facturae_xml,
             commands::generar_facturae_autofirma,
+            commands::firmar_factura_silenciosa,
             commands::verificar_onboarding,
             commands::obtener_empresas,
             commands::crear_empresa,

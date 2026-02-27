@@ -2211,6 +2211,12 @@
           "markdownDescription": "Crea una nueva serie de facturación"
         },
         {
+          "description": "Genera y firma Facturae con el almacén de certificados del sistema",
+          "type": "string",
+          "const": "allow-firmar-factura-silenciosa",
+          "markdownDescription": "Genera y firma Facturae con el almacén de certificados del sistema"
+        },
+        {
           "description": "Genera XML Facturae sin firmar y lanza AutoFirma para firma digital",
           "type": "string",
           "const": "allow-generar-facturae-autofirma",

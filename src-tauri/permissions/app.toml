@@ -69,6 +69,11 @@ description = "Genera XML Facturae sin firmar y lanza AutoFirma para firma digit
 commands.allow = ["generar_facturae_autofirma"]
 
 [[permission]]
+identifier = "allow-firmar-factura-silenciosa"
+description = "Genera y firma Facturae con el almacén de certificados del sistema"
+commands.allow = ["firmar_factura_silenciosa"]
+
+[[permission]]
 identifier = "allow-listar-facturas"
 description = "Lista todas las facturas de una empresa"
 commands.allow = ["listar_facturas"]
