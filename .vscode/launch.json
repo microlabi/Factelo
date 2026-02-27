@@ -1,0 +1,44 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Tauri Desktop (Rust Debug)",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--manifest-path=./src-tauri/Cargo.toml",
+                    "--no-default-features"
+                ],
+                "filter": {
+                    "name": "factelo-backend",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}/src-tauri",
+            "env": {
+                "RUST_BACKTRACE": "1"
+            },
+            "preLaunchTask": "start-vite"
+        },
+        {
+            "type": "chrome",
+            "request": "launch",
+            "name": "Frontend (Chrome DevTools)",
+            "url": "http://localhost:1420",
+            "webRoot": "${workspaceFolder}/src"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Tauri Desktop (Debug completo)",
+            "configurations": [
+                "Tauri Desktop (Rust Debug)",
+                "Frontend (Chrome DevTools)"
+            ],
+            "stopAll": true
+        }
+    ]
+}

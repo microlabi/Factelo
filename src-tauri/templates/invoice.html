@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Factura {{ invoice.invoice_code }}</title>
+    <style>
+      @page {
+        size: A4;
+        margin: 18mm 12mm;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        color: #0f172a;
+        font-family: Inter, Segoe UI, Arial, sans-serif;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .container {
+        width: 100%;
+      }
+
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 20px;
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-size: 24px;
+        color: #1d4ed8;
+        letter-spacing: -0.2px;
+      }
+
+      .brand .meta {
+        margin-top: 6px;
+        color: #475569;
+        font-size: 11px;
+      }
+
+      .invoice-tag {
+        text-align: right;
+      }
+
+      .invoice-tag .number {
+        display: inline-block;
+        background: #eff6ff;
+        color: #1d4ed8;
+        font-weight: 700;
+        padding: 6px 10px;
+        border-radius: 8px;
+        font-size: 13px;
+      }
+
+      .invoice-tag .date {
+        margin-top: 8px;
+        color: #334155;
+        font-size: 11px;
+      }
+
+      .panel {
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 12px;
+      }
+
+      .parties {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .panel h3 {
+        margin: 0 0 8px;
+        font-size: 11px;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+      }
+
+      .panel .name {
+        font-weight: 700;
+        margin-bottom: 4px;
+      }
+
+      .panel .line {
+        color: #334155;
+        font-size: 11px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      .lines {
+        margin-top: 6px;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      .lines th {
+        background: #f8fafc;
+        color: #334155;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        text-align: left;
+        padding: 10px;
+        border-bottom: 1px solid #e2e8f0;
+      }
+
+      .lines td {
+        padding: 9px 10px;
+        border-bottom: 1px solid #f1f5f9;
+        vertical-align: top;
+      }
+
+      .lines tr:last-child td {
+        border-bottom: none;
+      }
+
+      .numeric {
+        text-align: right;
+        white-space: nowrap;
+      }
+
+      .summary {
+        margin-top: 16px;
+        margin-left: auto;
+        width: 320px;
+      }
+
+      .summary td {
+        padding: 6px 0;
+      }
+
+      .summary .label {
+        color: #64748b;
+      }
+
+      .summary .value {
+        text-align: right;
+        font-weight: 600;
+      }
+
+      .summary .total td {
+        border-top: 1px solid #cbd5e1;
+        padding-top: 10px;
+        font-size: 15px;
+        font-weight: 800;
+      }
+
+      .audit {
+        margin-top: 18px;
+        border: 1px dashed #cbd5e1;
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: #f8fafc;
+      }
+
+      .audit .title {
+        margin-bottom: 6px;
+        color: #334155;
+        font-weight: 700;
+      }
+
+      .hash {
+        font-family: Consolas, Menlo, monospace;
+        font-size: 10px;
+        color: #0f172a;
+        word-break: break-all;
+      }
+
+      .footer {
+        margin-top: 22px;
+        color: #64748b;
+        font-size: 10px;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <div class="brand">
+          <h1>FACTURA</h1>
+          <div class="meta">Estado: {{ invoice.status }}</div>
+        </div>
+        <div class="invoice-tag">
+          <div class="number">{{ invoice.invoice_code }}</div>
+          <div class="date">Fecha emisión: {{ invoice.issue_date }}</div>
+        </div>
+      </div>
+
+      <div class="parties">
+        <div class="panel">
+          <h3>Emisor</h3>
+          <div class="name">{{ invoice.company_name }}</div>
+          <div class="line">NIF: {{ invoice.company_nif }}</div>
+          <div class="line">{{ invoice.company_address }}</div>
+        </div>
+
+        <div class="panel">
+          <h3>Cliente</h3>
+          <div class="name">{{ invoice.client_name }}</div>
+          <div class="line">NIF: {{ invoice.client_nif }}</div>
+          <div class="line">{{ invoice.client_address }}</div>
+          <div class="line">{{ invoice.client_email }}</div>
+        </div>
+      </div>
+
+      <div class="lines">
+        <table>
+          <thead>
+            <tr>
+              <th>Descripción</th>
+              <th class="numeric">Cantidad</th>
+              <th class="numeric">Precio</th>
+              <th class="numeric">IVA</th>
+              <th class="numeric">Total línea</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in invoice.items %}
+            <tr>
+              <td>{{ item.descripcion }}</td>
+              <td class="numeric">{{ item.cantidad }}</td>
+              <td class="numeric">{{ item.precio_unitario }}</td>
+              <td class="numeric">{{ item.tipo_iva }}</td>
+              <td class="numeric">{{ item.total_linea }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <table class="summary">
+        <tr>
+          <td class="label">Base imponible</td>
+          <td class="value">{{ invoice.subtotal }}</td>
+        </tr>
+        <tr>
+          <td class="label">Impuestos</td>
+          <td class="value">{{ invoice.total_taxes }}</td>
+        </tr>
+        <tr class="total">
+          <td>Total factura</td>
+          <td class="value">{{ invoice.total }}</td>
+        </tr>
+      </table>
+
+      <div class="audit">
+        <div class="title">Trazabilidad antifraude (VeriFactu)</div>
+        <div class="line"><strong>Hash registro:</strong></div>
+        <div class="hash">{{ invoice.hash_registro }}</div>
+        <div class="line" style="margin-top: 8px;"><strong>Hash anterior:</strong></div>
+        <div class="hash">{{ invoice.hash_anterior }}</div>
+      </div>
+
+      <div class="footer">
+        Generado por Factelo · {{ invoice.generated_at }}
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-default",
+  "description": "Permisos mínimos de escritorio para Factelo (IPC, diálogo de archivos, FS local, shell y updater OTA).",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "fs:default",
+    "shell:default",
+    "updater:default"
+  ]
+}

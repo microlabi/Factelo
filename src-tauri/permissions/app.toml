@@ -1,0 +1,74 @@
+[[permission]]
+identifier = "allow-insert-factura"
+description = "Permite invocar el comando insert_factura"
+commands.allow = ["insert_factura"]
+
+[[permission]]
+identifier = "allow-generate-pdf"
+description = "Permite invocar el comando generate_pdf"
+commands.allow = ["generate_pdf"]
+
+[[permission]]
+identifier = "allow-generar-facturae-xml"
+description = "Permite invocar el comando generar_facturae_xml"
+commands.allow = ["generar_facturae_xml"]
+
+[[permission]]
+identifier = "allow-verificar-onboarding"
+description = "Verifica si existe empresa y serie de facturación"
+commands.allow = ["verificar_onboarding"]
+
+[[permission]]
+identifier = "allow-obtener-empresas"
+description = "Lista las empresas registradas"
+commands.allow = ["obtener_empresas"]
+
+[[permission]]
+identifier = "allow-crear-empresa"
+description = "Crea una nueva empresa"
+commands.allow = ["crear_empresa"]
+
+[[permission]]
+identifier = "allow-obtener-series"
+description = "Lista las series de facturación de una empresa"
+commands.allow = ["obtener_series"]
+
+[[permission]]
+identifier = "allow-crear-serie"
+description = "Crea una nueva serie de facturación"
+commands.allow = ["crear_serie"]
+
+[[permission]]
+identifier = "allow-obtener-clientes"
+description = "Lista los clientes de una empresa"
+commands.allow = ["obtener_clientes"]
+
+[[permission]]
+identifier = "allow-crear-cliente"
+description = "Crea un cliente"
+commands.allow = ["crear_cliente"]
+
+[[permission]]
+identifier = "allow-obtener-productos"
+description = "Lista productos y servicios"
+commands.allow = ["obtener_productos"]
+
+[[permission]]
+identifier = "allow-crear-producto"
+description = "Crea producto o servicio"
+commands.allow = ["crear_producto"]
+
+[[permission]]
+identifier = "allow-obtener-dashboard-stats"
+description = "Obtiene KPIs del dashboard"
+commands.allow = ["obtener_dashboard_stats"]
+
+[[permission]]
+identifier = "allow-generar-facturae-autofirma"
+description = "Genera XML Facturae sin firmar y lanza AutoFirma para firma digital"
+commands.allow = ["generar_facturae_autofirma"]
+
+[[permission]]
+identifier = "allow-listar-facturas"
+description = "Lista todas las facturas de una empresa"
+commands.allow = ["listar_facturas"]

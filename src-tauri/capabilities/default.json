@@ -1,0 +1,30 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permisos explícitos IPC y filesystem/dialog para comandos de facturación, PDF y Facturae.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "allow-insert-factura",
+    "allow-generate-pdf",
+    "allow-generar-facturae-xml",
+    "allow-verificar-onboarding",
+    "allow-obtener-empresas",
+    "allow-crear-empresa",
+    "allow-obtener-series",
+    "allow-crear-serie",
+    "allow-obtener-clientes",
+    "allow-crear-cliente",
+    "allow-obtener-productos",
+    "allow-crear-producto",
+    "allow-obtener-dashboard-stats",
+    "allow-listar-facturas",
+    "allow-generar-facturae-autofirma",
+    "fs:allow-write",
+    "fs:allow-read",
+    "dialog:allow-save",
+    "dialog:allow-open"
+  ]
+}
