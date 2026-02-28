@@ -283,10 +283,18 @@
           <td class="label">Base imponible</td>
           <td class="value">{{ invoice.subtotal }}</td>
         </tr>
+        {% for g in invoice.iva_groups %}
         <tr>
-          <td class="label">Impuestos</td>
+          <td class="label">IVA {{ g.rate }} <span style="color:#888;font-size:10px">(base {{ g.base }})</span></td>
+          <td class="value">{{ g.cuota }}</td>
+        </tr>
+        {% endfor %}
+        {% if invoice.iva_groups | length == 0 %}
+        <tr>
+          <td class="label">IVA (0%)</td>
           <td class="value">{{ invoice.total_taxes }}</td>
         </tr>
+        {% endif %}
         <tr class="total">
           <td>Total factura</td>
           <td class="value">{{ invoice.total }}</td>

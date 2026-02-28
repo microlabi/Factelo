@@ -21,6 +21,7 @@
     "allow-crear-producto",
     "allow-obtener-dashboard-stats",
     "allow-listar-facturas",
+    "allow-obtener-factura-detalle",
     "allow-generar-facturae-autofirma",
     "allow-firmar-factura-silenciosa",
     "allow-generar-qr-legal",

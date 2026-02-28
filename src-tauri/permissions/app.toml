@@ -79,6 +79,11 @@ description = "Lista todas las facturas de una empresa"
 commands.allow = ["listar_facturas"]
 
 [[permission]]
+identifier = "allow-obtener-factura-detalle"
+description = "Obtiene el detalle completo de una factura con sus líneas"
+commands.allow = ["obtener_factura_detalle"]
+
+[[permission]]
 identifier = "allow-generar-qr-legal"
 description = "Genera el QR técnico AEAT de notariado para una factura"
 commands.allow = ["generar_qr_legal"]

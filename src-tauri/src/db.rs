@@ -63,6 +63,16 @@ async fn apply_security_pragmas(pool: &DbPool, encryption_key: Option<&str>) -> 
     if let Some(key) = encryption_key.filter(|value| !value.trim().is_empty()) {
         // SQLCipher acepta la clave en formato hex literal: PRAGMA key = "x'hexstring'";
         // Los 32 bytes se pasan como 64 caracteres hexadecimales.
+        //
+        // PRAGMA no admite bind parameters (?), así que interpolamos directamente.
+        // Para evitar inyección SQL validamos que `key` sea estrictamente
+        // hexadecimal (solo [0-9a-fA-F]) antes de incluirla en el string.
+        if !key.chars().all(|c| c.is_ascii_hexdigit()) {
+            anyhow::bail!(
+                "La clave de cifrado contiene caracteres no hexadecimales; \
+                 se rechaza para evitar inyección en PRAGMA key"
+            );
+        }
         let pragma_key = format!("PRAGMA key = \"x'{key}'\";");
         sqlx::query(&pragma_key)
             .execute(pool)

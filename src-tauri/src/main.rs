@@ -34,6 +34,7 @@ fn main() {
             commands::crear_producto,
             commands::obtener_dashboard_stats,
             commands::listar_facturas,
+            commands::obtener_factura_detalle,
             pdf::generate_pdf,
             pdf::abrir_archivo,
             // ── Registro Inalterable (Veri*factu / Camino 2) ─────────────

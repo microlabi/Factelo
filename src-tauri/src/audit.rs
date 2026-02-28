@@ -253,13 +253,58 @@ async fn generar_qr_interno(
          ?nif={nif}&numserie={numserie}&fecha={fecha}&importe={importe}&hash={hash_corto}"
     );
 
-    // ── Generar QR como SVG ──────────────────────────────────────────────────
-    let svg = qr_to_svg(&url)?;
-    use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-    let svg_b64 = B64.encode(svg.as_bytes());
-    let svg_data_url = format!("data:image/svg+xml;base64,{svg_b64}");
+    // ── Generar QR como PNG ──────────────────────────────────────────────────
+    let svg_data_url = qr_to_png_data_url(&url)?;
 
     Ok(QrLegalResponse { svg_data_url, url })
+}
+
+/// Genera el código QR como imagen PNG y lo devuelve como Data URL
+/// (`data:image/png;base64,...`), lista para usar en `<img src="...">` y
+/// en plantillas HTML sin problemas de compatibilidad con WebView.
+pub fn qr_to_png_data_url(data: &str) -> AppResult<String> {
+    use qrcodegen::{QrCode, QrCodeEcc};
+    use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+    use image::{GrayImage, Luma};
+
+    let qr = QrCode::encode_text(data, QrCodeEcc::Medium)
+        .map_err(|e| AppError::Internal(format!("Error generando QR: {e:?}")))?;
+
+    let size = qr.size() as u32;
+    let border = 4u32;  // módulos de margen blanco
+    let scale = 8u32;   // píxeles por módulo
+    let total = (size + border * 2) * scale;
+
+    let mut img = GrayImage::new(total, total);
+    // Rellenar con blanco
+    for pixel in img.pixels_mut() {
+        *pixel = Luma([255u8]);
+    }
+    // Dibujar módulos negros
+    for y in 0..qr.size() {
+        for x in 0..qr.size() {
+            if qr.get_module(x, y) {
+                let ox = (border + x as u32) * scale;
+                let oy = (border + y as u32) * scale;
+                for dy in 0..scale {
+                    for dx in 0..scale {
+                        img.put_pixel(ox + dx, oy + dy, Luma([0u8]));
+                    }
+                }
+            }
+        }
+    }
+
+    let dyn_img = image::DynamicImage::from(img);
+    let mut png_bytes: Vec<u8> = Vec::new();
+    dyn_img
+        .write_to(
+            &mut std::io::Cursor::new(&mut png_bytes),
+            image::ImageFormat::Png,
+        )
+        .map_err(|e| AppError::Internal(format!("Error codificando QR a PNG: {e}")))?;
+
+    Ok(format!("data:image/png;base64,{}", B64.encode(&png_bytes)))
 }
 
 /// Genera un SVG con el módulo QR codificado.

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useForm, useFieldArray, FormProvider, Controller } from "react-hook-form";
+import { useForm, useFieldArray, FormProvider, Controller, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Plus,
@@ -164,7 +164,6 @@ function FormField({
 // ─── Panel de totales ────────────────────────────────────────────────────────
 
 interface TotalsPanelProps {
-  lineas: InvoiceFormValues["lineas"];
   phase: SubmitPhase;
   onSaveDraft: () => void;
   onSaveAndGenerate: () => void;
@@ -173,14 +172,17 @@ interface TotalsPanelProps {
 }
 
 function TotalsPanel({
-  lineas,
   phase,
   onSaveDraft,
   onSaveAndGenerate,
   isSubmitting,
   esEntidadPublica,
 }: TotalsPanelProps) {
-  const totals = useInvoiceTotals(lineas);
+  // useWatch suscribe este componente directamente al form context y siempre
+  // devuelve los valores actuales de cada línea, evitando el snapshot estático
+  // que puede devolver watch("lineas") en el padre cuando se usa con useFieldArray.
+  const liveLineas = useWatch<InvoiceFormValues, "lineas">({ name: "lineas" });
+  const totals = useInvoiceTotals(liveLineas ?? []);
 
   return (
     <div className="flex flex-col gap-4">
@@ -431,7 +433,6 @@ export function InvoiceForm() {
     formState: { errors },
   } = methods;
 
-  const watchedLineas = watch("lineas");
   const watchedSerieId = watch("serie_id");
   const esEntidadPublica = watch("es_entidad_publica");
   const tipoRectificativa = watch("tipo_rectificativa");
@@ -442,8 +443,6 @@ export function InvoiceForm() {
   });
 
   // ── Lógica de envío ──────────────────────────────────────────────────────
-
-  const totals = useInvoiceTotals(watchedLineas ?? []);
 
   async function submitInvoice(
     data: InvoiceFormValues,
@@ -459,15 +458,30 @@ export function InvoiceForm() {
 
     setSubmitPhase({ type: "saving" });
 
+    // Calcular totales desde data.lineas (valores coercidos y validados por Zod)
+    // para garantizar consistencia con lo que el usuario realmente introdujo.
+    const submitTotals = data.lineas.reduce(
+      (acc, line) => {
+        const t = calcLine(line);
+        return {
+          subtotal: acc.subtotal + t.base,
+          totalIva: acc.totalIva + t.cuota_iva,
+          totalRetenciones: acc.totalRetenciones + t.cuota_retencion,
+          total: acc.total + t.total,
+        };
+      },
+      { subtotal: 0, totalIva: 0, totalRetenciones: 0, total: 0 }
+    );
+
     const payload: InsertFacturaInput = {
       empresa_id: empresa.id,
       cliente_id: data.cliente_id,
       serie_id: data.serie_id,
       numero: data.numero,
       fecha_emision: data.fecha_emision,
-      subtotal: eurosToCents(totals.subtotal),
-      total_impuestos: eurosToCents(totals.totalIva),
-      total: eurosToCents(totals.total),
+      subtotal: eurosToCents(submitTotals.subtotal),
+      total_impuestos: eurosToCents(submitTotals.totalIva),
+      total: eurosToCents(submitTotals.total),
       estado,
       firma_app: null,
       lineas: data.lineas.map((line) => ({
@@ -1093,7 +1107,6 @@ export function InvoiceForm() {
         {/* ── Columna lateral con totales (sticky) ──────────────────── */}
         <div className="lg:sticky lg:top-6 lg:self-start">
           <TotalsPanel
-            lineas={watchedLineas ?? []}
             phase={submitPhase}
             onSaveDraft={onSaveDraft}
             onSaveAndGenerate={onSaveAndGenerate}

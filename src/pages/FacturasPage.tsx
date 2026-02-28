@@ -14,6 +14,8 @@ import {
   Download,
   FileSearch,
   ExternalLink,
+  Eye,
+  ArrowUpDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,9 +45,16 @@ import {
 } from "@/components/ui/dialog";
 import { cn, formatCurrency } from "@/lib/utils";
 import { api, QrLegalResponse } from "@/lib/api";
-import type { FacturaRow } from "@/lib/api";
+import type { FacturaRow, FacturaDetalle } from "@/lib/api";
 import { useSessionStore, selectEmpresa } from "@/stores/sessionStore";
 import { queryClient } from "@/lib/queryClient";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -84,10 +93,14 @@ function estadoBadge(estado: string) {
 export function FacturasPage() {
   const empresa = useSessionStore(selectEmpresa);
   const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<"fecha_desc" | "fecha_asc" | "total_desc" | "total_asc" | "cliente_asc">("fecha_desc");
+  const [filtroEstado, setFiltroEstado] = useState<"" | "BORRADOR" | "EMITIDA" | "ANULADA">("");
   const [pdfLoadingId, setPdfLoadingId] = useState<number | null>(null);
   const [xmlLoadingId, setXmlLoadingId] = useState<number | null>(null);
   const [qrLoadingId, setQrLoadingId] = useState<number | null>(null);
   const [qrDialogData, setQrDialogData] = useState<QrLegalResponse | null>(null);
+  const [previewData, setPreviewData] = useState<FacturaDetalle | null>(null);
+  const [previewLoadingId, setPreviewLoadingId] = useState<number | null>(null);
   const [inspeccionLoading, setInspeccionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [facturas, setFacturas] = useState<FacturaRow[]>([]);
@@ -134,16 +147,34 @@ export function FacturasPage() {
     return unsubscribe;
   }, [cargarFacturas]);
 
-  const filtered = facturas.filter((f) => {
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    const code = `${f.serie_prefijo}-${f.numero}`.toLowerCase();
-    return (
-      code.includes(q) ||
-      f.cliente_nombre.toLowerCase().includes(q) ||
-      f.fecha_emision.includes(q)
-    );
-  });
+  const filtered = facturas
+    .filter((f) => {
+      if (filtroEstado && f.estado !== filtroEstado) return false;
+      if (!search.trim()) return true;
+      const q = search.toLowerCase();
+      const code = `${f.serie_prefijo}-${f.numero}`.toLowerCase();
+      return (
+        code.includes(q) ||
+        f.cliente_nombre.toLowerCase().includes(q) ||
+        f.fecha_emision.includes(q)
+      );
+    })
+    .sort((a, b) => {
+      switch (sortBy) {
+        case "fecha_desc":
+          return b.fecha_emision.localeCompare(a.fecha_emision) || b.id - a.id;
+        case "fecha_asc":
+          return a.fecha_emision.localeCompare(b.fecha_emision) || a.id - b.id;
+        case "total_desc":
+          return b.total - a.total;
+        case "total_asc":
+          return a.total - b.total;
+        case "cliente_asc":
+          return a.cliente_nombre.localeCompare(b.cliente_nombre, "es");
+        default:
+          return 0;
+      }
+    });
 
   async function handlePdf(f: FacturaRow) {
     if (!empresa) return;
@@ -203,6 +234,23 @@ export function FacturasPage() {
       );
     } finally {
       setQrLoadingId(null);
+    }
+  }
+
+  async function handlePreview(f: FacturaRow) {
+    if (!empresa) return;
+    setPreviewLoadingId(f.id);
+    try {
+      const detalle = await api.obtenerFacturaDetalle(f.id, empresa.id);
+      setPreviewData(detalle);
+    } catch (err: unknown) {
+      const msg =
+        typeof err === "object" && err !== null && "message" in err
+          ? (err as { message: string }).message
+          : String(err);
+      toast.error("Error al cargar la factura", { description: msg });
+    } finally {
+      setPreviewLoadingId(null);
     }
   }
 
@@ -311,11 +359,43 @@ export function FacturasPage() {
             <div className="relative w-full sm:w-56">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
               <Input
+                type="search"
                 placeholder="Número, cliente, fecha…"
                 className="pl-8 h-8 text-xs"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
               />
+            </div>
+          </div>
+          {/* ── Filtros y orden ── */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-border/50">
+            <span className="text-[11px] text-muted-foreground mr-0.5">Estado:</span>
+            {(["", "EMITIDA", "BORRADOR", "ANULADA"] as const).map((estado) => (
+              <Button
+                key={estado || "todos"}
+                size="sm"
+                variant={filtroEstado === estado ? "secondary" : "ghost"}
+                className="h-6 px-2 text-[11px]"
+                onClick={() => setFiltroEstado(estado)}
+              >
+                {estado === "" ? "Todos" : estado === "EMITIDA" ? "Emitida" : estado === "BORRADOR" ? "Borrador" : "Anulada"}
+              </Button>
+            ))}
+            <div className="ml-auto flex items-center gap-1.5">
+              <ArrowUpDown className="size-3 text-muted-foreground" />
+              <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
+                <SelectTrigger className="h-6 text-[11px] w-44 border-0 bg-muted/50 px-2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fecha_desc">Fecha (más reciente)</SelectItem>
+                  <SelectItem value="fecha_asc">Fecha (más antigua)</SelectItem>
+                  <SelectItem value="total_desc">Importe (mayor)</SelectItem>
+                  <SelectItem value="total_asc">Importe (menor)</SelectItem>
+                  <SelectItem value="cliente_asc">Cliente (A–Z)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardHeader>
@@ -351,6 +431,7 @@ export function FacturasPage() {
               )}
             </div>
           ) : (
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -400,6 +481,31 @@ export function FacturasPage() {
                     <TableCell>{estadoBadge(f.estado)}</TableCell>
                     <TableCell>
                       <div className="flex items-center justify-end gap-1">
+                        {/* Botón Ver detalle */}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={cn(
+                                "size-7 opacity-0 group-hover:opacity-100 transition-opacity",
+                                previewLoadingId === f.id && "opacity-100"
+                              )}
+                              disabled={previewLoadingId === f.id}
+                              onClick={() => handlePreview(f)}
+                            >
+                              {previewLoadingId === f.id ? (
+                                <Loader2 className="size-3.5 animate-spin" />
+                              ) : (
+                                <Eye className="size-3.5" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="text-xs">
+                            Ver detalle
+                          </TooltipContent>
+                        </Tooltip>
+                        {/* Botón PDF */}
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
@@ -480,9 +586,143 @@ export function FacturasPage() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>
+
+      {/* ── Diálogo Vista Previa de Factura ──────────────────────── */}
+      <Dialog open={!!previewData} onOpenChange={(open) => !open && setPreviewData(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="size-4 text-muted-foreground" />
+              {previewData && (
+                <>
+                  Factura {previewData.serie_prefijo}-{String(previewData.numero).padStart(4, "0")}
+                </>
+              )}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Detalle de la factura antes de generar el documento
+            </DialogDescription>
+          </DialogHeader>
+
+          {previewData && (
+            <div className="space-y-4 pt-1">
+              {/* Cabecera de la factura */}
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="space-y-1">
+                  <p className="font-medium text-foreground">Cliente</p>
+                  <p className="text-muted-foreground">{previewData.cliente_nombre}</p>
+                  {previewData.cliente_nif && (
+                    <p className="text-muted-foreground font-mono">{previewData.cliente_nif}</p>
+                  )}
+                </div>
+                <div className="space-y-1 text-right">
+                  <p className="font-medium text-foreground">Fecha de emisión</p>
+                  <p className="text-muted-foreground">{formatDate(previewData.fecha_emision)}</p>
+                  <div>{estadoBadge(previewData.estado)}</div>
+                </div>
+              </div>
+
+              {/* Líneas de factura */}
+              <div className="rounded-lg border border-border overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50">
+                      <TableHead className="text-[11px] py-2">Descripción</TableHead>
+                      <TableHead className="text-[11px] py-2 text-right w-16">Cant.</TableHead>
+                      <TableHead className="text-[11px] py-2 text-right w-24">P. Unit.</TableHead>
+                      <TableHead className="text-[11px] py-2 text-right w-16">IVA</TableHead>
+                      <TableHead className="text-[11px] py-2 text-right w-24">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {previewData.lineas.map((linea) => (
+                      <TableRow key={linea.id}>
+                        <TableCell className="text-xs py-2">{linea.descripcion}</TableCell>
+                        <TableCell className="text-xs py-2 text-right tabular-nums">
+                          {linea.cantidad % 1 === 0
+                            ? linea.cantidad
+                            : linea.cantidad.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-xs py-2 text-right tabular-nums">
+                          {formatCurrency(linea.precio_unitario / 100)}
+                        </TableCell>
+                        <TableCell className="text-xs py-2 text-right tabular-nums text-muted-foreground">
+                          {linea.tipo_iva}%
+                        </TableCell>
+                        <TableCell className="text-xs py-2 text-right tabular-nums font-medium">
+                          {formatCurrency(linea.total_linea / 100)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Totales */}
+              <div className="flex justify-end">
+                <div className="w-56 space-y-1.5 text-xs">
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Base imponible</span>
+                    <span className="tabular-nums">{formatCurrency(previewData.subtotal / 100)}</span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>IVA</span>
+                    <span className="tabular-nums">{formatCurrency(previewData.total_impuestos / 100)}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold text-foreground border-t border-border pt-1.5">
+                    <span>Total</span>
+                    <span className="tabular-nums">{formatCurrency(previewData.total / 100)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Acciones */}
+              <div className="flex justify-end gap-2 pt-1 border-t border-border">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-2 text-xs"
+                  disabled={pdfLoadingId === previewData.id}
+                  onClick={() => {
+                    const f = facturas.find((x) => x.id === previewData.id);
+                    if (f) { handlePdf(f); setPreviewData(null); }
+                  }}
+                >
+                  {pdfLoadingId === previewData.id ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Printer className="size-3.5" />
+                  )}
+                  Generar PDF
+                </Button>
+                {previewData.es_entidad_publica === 1 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-2 text-xs text-amber-600 hover:text-amber-700 border-amber-200 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-800 dark:hover:bg-amber-950/40"
+                    disabled={xmlLoadingId === previewData.id}
+                    onClick={() => {
+                      const f = facturas.find((x) => x.id === previewData.id);
+                      if (f) { handleFacturae(f); setPreviewData(null); }
+                    }}
+                  >
+                    {xmlLoadingId === previewData.id ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <FileCode2 className="size-3.5" />
+                    )}
+                    Generar Facturae
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* ── Diálogo QR de notariado AEAT ─────────────────────────── */}
       <Dialog open={!!qrDialogData} onOpenChange={(open) => !open && setQrDialogData(null)}>
@@ -525,12 +765,12 @@ export function FacturasPage() {
                   onClick={() => {
                     const a = document.createElement("a");
                     a.href = qrDialogData.svg_data_url;
-                    a.download = "qr-verificacion-aeat.svg";
+                    a.download = "qr-verificacion-aeat.png";
                     a.click();
                   }}
                 >
                   <Download className="size-3.5" />
-                  Descargar SVG
+                  Descargar PNG
                 </Button>
                 <Button
                   variant="outline"

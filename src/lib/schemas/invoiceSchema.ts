@@ -82,7 +82,14 @@ export const invoiceFormSchema = z.object({
       "Formato de fecha no válido"
     )
     .refine(
-      (d) => d <= new Date().toISOString().split("T")[0],
+      (d) => {
+        // Comparamos objetos Date reales para evitar fallos en casos límite
+        // (zonas horarias, strings no estrictamente ISO, etc.)
+        const input = new Date(d + "T00:00:00");
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return input <= today;
+      },
       "La fecha de emisión no puede ser posterior a hoy"
     ),
   notas: z.string().max(1000, "Máximo 1000 caracteres").optional(),

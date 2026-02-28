@@ -7,7 +7,6 @@ use tauri::{path::BaseDirectory, Manager};
 use tera::{Context, Tera};
 use url::Url;
 
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 
 use crate::{
     db::DbPool,
@@ -20,7 +19,9 @@ const INVOICE_TEMPLATE: &str = include_str!("../templates/invoice.html");
 struct InvoiceRow {
     numero: i64,
     fecha_emision: String,
+    #[allow(dead_code)] // almacenado en BD pero los totales se recalculan desde las líneas
     subtotal: i64,
+    #[allow(dead_code)]
     total_impuestos: i64,
     total: i64,
     hash_registro: String,
@@ -46,6 +47,13 @@ struct InvoiceLineRow {
 }
 
 #[derive(Debug, Serialize)]
+struct IvaGroupTemplateData {
+    rate: String,   // p.ej. "21%"
+    base: String,   // base imponible formateada
+    cuota: String,  // cuota IVA formateada
+}
+
+#[derive(Debug, Serialize)]
 struct InvoiceTemplateData {
     generated_at: String,
     invoice_code: String,
@@ -61,10 +69,11 @@ struct InvoiceTemplateData {
     subtotal: String,
     total_taxes: String,
     total: String,
+    iva_groups: Vec<IvaGroupTemplateData>,
     hash_registro: String,
     hash_anterior: String,
     items: Vec<InvoiceItemTemplateData>,
-    /// SVG del QR de verificación AEAT como Data URL (puede estar vacío si falla)
+    /// PNG del QR de verificación AEAT como Data URL (puede estar vacío si falla)
     qr_svg_data_url: String,
     /// URL completa del QR de notariado AEAT
     qr_url: String,
@@ -112,7 +121,18 @@ async fn generate_pdf_internal(
     }
 
     // ── QR de verificación tributaria AEAT (RD 1007/2023) ─────────────────
-    let importe = format!("{:.2}", invoice.total as f64 / 100.0);
+    // Recalcular el total desde las líneas por si invoice.total está a 0
+    // (facturas creadas con versiones anteriores del frontend).
+    let total_real: i64 = if invoice.total > 0 {
+        invoice.total
+    } else {
+        lines.iter().map(|l| {
+            let base = (l.cantidad * l.precio_unitario as f64).round() as i64;
+            let cuota = (base as f64 * l.tipo_iva / 100.0).round() as i64;
+            base + cuota
+        }).sum()
+    };
+    let importe = format!("{:.2}", total_real as f64 / 100.0);
     let numserie = format!("{}{:04}", invoice.serie_prefijo, invoice.numero);
     let hash_corto = &invoice.hash_registro[..invoice.hash_registro.len().min(8)];
     let qr_url = format!(
@@ -121,8 +141,8 @@ async fn generate_pdf_internal(
         nif = invoice.empresa_nif,
         fecha = invoice.fecha_emision,
     );
-    let qr_svg_data_url = match crate::audit::qr_to_svg(&qr_url) {
-        Ok(svg) => format!("data:image/svg+xml;base64,{}", B64.encode(svg.as_bytes())),
+    let qr_svg_data_url = match crate::audit::qr_to_png_data_url(&qr_url) {
+        Ok(data_url) => data_url,
         Err(_) => String::new(),
     };
 
@@ -212,6 +232,38 @@ fn render_invoice_html(
         })
         .collect::<Vec<_>>();
 
+    // ── Recalcular totales desde las líneas ──────────────────────────────────
+    // No usamos invoice.subtotal / invoice.total_impuestos porque podrían
+    // haberse guardado a 0 si la factura fue creada con una versión anterior.
+    use std::collections::BTreeMap;
+    let mut subtotal_cents: i64 = 0;
+    let mut iva_map: BTreeMap<i32, (i64, i64)> = BTreeMap::new(); // key=rate*100 → (base, cuota)
+
+    for line in lines {
+        let base = (line.cantidad * line.precio_unitario as f64).round() as i64;
+        let cuota = (base as f64 * line.tipo_iva / 100.0).round() as i64;
+        let rate_key = (line.tipo_iva * 100.0).round() as i32;
+        subtotal_cents += base;
+        let entry = iva_map.entry(rate_key).or_insert((0_i64, 0_i64));
+        entry.0 += base;
+        entry.1 += cuota;
+    }
+
+    let total_iva_cents: i64 = iva_map.values().map(|(_, cuota)| cuota).sum();
+    let total_cents = subtotal_cents + total_iva_cents;
+
+    // IVA groups ordenados de mayor a menor tipo (21% → 10% → 4% → 0%)
+    let iva_groups: Vec<IvaGroupTemplateData> = iva_map
+        .into_iter()
+        .rev()
+        .filter(|(_, (base, cuota))| *base != 0 || *cuota != 0)
+        .map(|(rate_key, (base, cuota))| IvaGroupTemplateData {
+            rate: format!("{:.0}%", rate_key as f64 / 100.0),
+            base: format_currency(base),
+            cuota: format_currency(cuota),
+        })
+        .collect();
+
     let template_data = InvoiceTemplateData {
         generated_at: current_timestamp_string(),
         invoice_code: format!("{}-{:04}", invoice.serie_prefijo, invoice.numero),
@@ -230,9 +282,10 @@ fn render_invoice_html(
             .clone()
             .unwrap_or_else(|| "-".to_string()),
         status: invoice.estado.clone(),
-        subtotal: format_currency(invoice.subtotal),
-        total_taxes: format_currency(invoice.total_impuestos),
-        total: format_currency(invoice.total),
+        subtotal: format_currency(subtotal_cents),
+        total_taxes: format_currency(total_iva_cents),
+        total: format_currency(total_cents),
+        iva_groups,
         hash_registro: invoice.hash_registro.clone(),
         hash_anterior: invoice
             .hash_anterior
@@ -279,8 +332,22 @@ fn render_html_to_pdf(html: &str, output_path: &PathBuf) -> AppResult<()> {
     fs::write(&temp_html_path, html)?;
 
     let render_result = (|| -> AppResult<()> {
+        // ── Localizar Chrome/Edge del sistema ────────────────────────────────
+        // headless_chrome sin path explícito intenta descargar Chromium, lo que
+        // cuelga indefinidamente. Usamos el navegador instalado en el sistema.
+        let browser_path = find_system_browser().ok_or_else(|| {
+            AppError::Internal(
+                "No se encontró Google Chrome ni Microsoft Edge instalados. \
+                 Por favor instala alguno de ellos para poder generar PDFs."
+                    .to_string(),
+            )
+        })?;
+
         let options = LaunchOptionsBuilder::default()
+            .path(Some(browser_path))
             .headless(true)
+            .sandbox(false) // necesario en Tauri/Windows para evitar bloqueos
+            .idle_browser_timeout(std::time::Duration::from_secs(60))
             .build()
             .map_err(|error| {
                 AppError::Internal(format!(
@@ -290,7 +357,7 @@ fn render_html_to_pdf(html: &str, output_path: &PathBuf) -> AppResult<()> {
 
         let browser = Browser::new(options).map_err(|error| {
             AppError::Internal(format!(
-                "No se pudo iniciar Chromium headless para generar PDF: {error}"
+                "No se pudo iniciar el navegador headless para generar PDF: {error}"
             ))
         })?;
 
@@ -334,6 +401,75 @@ fn render_html_to_pdf(html: &str, output_path: &PathBuf) -> AppResult<()> {
 
     let _ = fs::remove_file(&temp_html_path);
     render_result
+}
+
+/// Busca un navegador Chromium instalado en el sistema por orden de preferencia:
+/// Chrome (estable) → Chrome Beta → Chrome Dev → MSEdge.
+/// Devuelve `None` si no encuentra ninguno.
+fn find_system_browser() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        let candidates = [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files\Google\Chrome Beta\Application\chrome.exe",
+            r"C:\Program Files\Google\Chrome Dev\Application\chrome.exe",
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        ];
+        for path in candidates {
+            let p = std::path::PathBuf::from(path);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+        // También buscar en LocalAppData del usuario
+        if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+            let user_candidates = [
+                format!(r"{local_app_data}\Google\Chrome\Application\chrome.exe"),
+                format!(r"{local_app_data}\Microsoft\Edge\Application\msedge.exe"),
+            ];
+            for path in &user_candidates {
+                let p = std::path::PathBuf::from(path);
+                if p.exists() {
+                    return Some(p);
+                }
+            }
+        }
+        None
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let candidates = [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        ];
+        for path in candidates {
+            let p = std::path::PathBuf::from(path);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+        None
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let candidates = [
+            "/usr/bin/google-chrome",
+            "/usr/bin/google-chrome-stable",
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+            "/snap/bin/chromium",
+        ];
+        for path in candidates {
+            let p = std::path::PathBuf::from(path);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+        None
+    }
 }
 
 fn format_currency(cents: i64) -> String {

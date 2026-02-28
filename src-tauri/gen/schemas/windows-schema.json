@@ -2283,6 +2283,12 @@
           "markdownDescription": "Lista las empresas registradas"
         },
         {
+          "description": "Obtiene el detalle completo de una factura con sus líneas",
+          "type": "string",
+          "const": "allow-obtener-factura-detalle",
+          "markdownDescription": "Obtiene el detalle completo de una factura con sus líneas"
+        },
+        {
           "description": "Lista productos y servicios",
           "type": "string",
           "const": "allow-obtener-productos",

@@ -200,6 +200,30 @@ export interface FicheroInspeccionResponse {
   total_eventos: number;
 }
 
+export interface LineaDetalle {
+  id: number;
+  descripcion: string;
+  cantidad: number;
+  precio_unitario: number;
+  tipo_iva: number;
+  total_linea: number;
+}
+
+export interface FacturaDetalle {
+  id: number;
+  numero: number;
+  serie_prefijo: string;
+  fecha_emision: string;
+  cliente_nombre: string;
+  cliente_nif: string | null;
+  subtotal: number;
+  total_impuestos: number;
+  total: number;
+  estado: string;
+  es_entidad_publica: number;
+  lineas: LineaDetalle[];
+}
+
 // ─── API ─────────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -245,6 +269,12 @@ export const api = {
 
   listarFacturas: (empresaId: number): Promise<FacturaRow[]> =>
     invoke("listar_facturas", { empresaId }),
+
+  obtenerFacturaDetalle: (
+    facturaId: number,
+    empresaId: number
+  ): Promise<FacturaDetalle> =>
+    invoke("obtener_factura_detalle", { facturaId, empresaId }),
 
   generarFacturaeXml: (
     facturaId: number,

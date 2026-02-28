@@ -1625,15 +1625,38 @@ pub async fn listar_facturas(
             s.prefijo AS serie_prefijo,
             f.fecha_emision,
             c.nombre AS cliente_nombre,
-            CAST(f.total AS INTEGER) AS total,
-            CAST(f.total_impuestos AS INTEGER) AS total_impuestos,
-            CAST(f.subtotal AS INTEGER) AS subtotal,
+            -- Si los valores almacenados son 0 (facturas de versiones anteriores)
+            -- recalcular desde lineas_factura, igual que hace el generador de PDF.
+            CASE
+                WHEN CAST(f.total AS INTEGER) <> 0 THEN CAST(f.total AS INTEGER)
+                ELSE COALESCE(lt.total_calc, 0)
+            END AS total,
+            CASE
+                WHEN CAST(f.total_impuestos AS INTEGER) <> 0 THEN CAST(f.total_impuestos AS INTEGER)
+                ELSE COALESCE(lt.iva_calc, 0)
+            END AS total_impuestos,
+            CASE
+                WHEN CAST(f.subtotal AS INTEGER) <> 0 THEN CAST(f.subtotal AS INTEGER)
+                ELSE COALESCE(lt.subtotal_calc, 0)
+            END AS subtotal,
             f.estado,
             COALESCE(f.es_entidad_publica, 0) AS es_entidad_publica,
             f.hash_registro
         FROM facturas f
         JOIN clientes c ON c.id = f.cliente_id
         JOIN series_facturacion s ON s.id = f.serie_id
+        LEFT JOIN (
+            SELECT
+                factura_id,
+                CAST(ROUND(SUM(ROUND(cantidad * precio_unitario))) AS INTEGER) AS subtotal_calc,
+                CAST(ROUND(SUM(ROUND(ROUND(cantidad * precio_unitario) * tipo_iva / 100.0))) AS INTEGER) AS iva_calc,
+                CAST(ROUND(SUM(
+                    ROUND(cantidad * precio_unitario) +
+                    ROUND(ROUND(cantidad * precio_unitario) * tipo_iva / 100.0)
+                )) AS INTEGER) AS total_calc
+            FROM lineas_factura
+            GROUP BY factura_id
+        ) lt ON lt.factura_id = f.id
         WHERE f.empresa_id = ?1
         ORDER BY f.fecha_emision DESC, f.id DESC
         "#,
@@ -1644,4 +1667,147 @@ pub async fn listar_facturas(
     .map_err(|e| ApiError::from(AppError::from(e)))?;
 
     Ok(rows)
+}
+
+// ─── Obtener detalle de factura con líneas ────────────────────────────────────
+
+#[derive(Debug, serde::Serialize, sqlx::FromRow)]
+pub struct LineaDetalleRow {
+    pub id: i64,
+    pub descripcion: String,
+    pub cantidad: f64,
+    pub precio_unitario: i64,
+    pub tipo_iva: f64,
+    pub total_linea: i64,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct FacturaDetalleResponse {
+    pub id: i64,
+    pub numero: i64,
+    pub serie_prefijo: String,
+    pub fecha_emision: String,
+    pub cliente_nombre: String,
+    pub cliente_nif: Option<String>,
+    pub subtotal: i64,
+    pub total_impuestos: i64,
+    pub total: i64,
+    pub estado: String,
+    pub es_entidad_publica: i64,
+    pub lineas: Vec<LineaDetalleRow>,
+}
+
+#[tauri::command]
+pub async fn obtener_factura_detalle(
+    state: tauri::State<'_, DbPool>,
+    factura_id: i64,
+    empresa_id: i64,
+) -> CommandResult<FacturaDetalleResponse> {
+    if factura_id <= 0 || empresa_id <= 0 {
+        return Err(ApiError::from(AppError::Validation(
+            "factura_id y empresa_id deben ser mayores que cero".to_string(),
+        )));
+    }
+
+    #[derive(Debug, sqlx::FromRow)]
+    struct HeaderRow {
+        id: i64,
+        numero: i64,
+        serie_prefijo: String,
+        fecha_emision: String,
+        cliente_nombre: String,
+        cliente_nif: Option<String>,
+        subtotal: i64,
+        total_impuestos: i64,
+        total: i64,
+        estado: String,
+        es_entidad_publica: i64,
+    }
+
+    let header = sqlx::query_as::<_, HeaderRow>(
+        r#"
+        SELECT
+            f.id,
+            f.numero,
+            s.prefijo AS serie_prefijo,
+            f.fecha_emision,
+            c.nombre AS cliente_nombre,
+            c.nif AS cliente_nif,
+            CASE
+                WHEN CAST(f.subtotal AS INTEGER) <> 0 THEN CAST(f.subtotal AS INTEGER)
+                ELSE COALESCE(lt.subtotal_calc, 0)
+            END AS subtotal,
+            CASE
+                WHEN CAST(f.total_impuestos AS INTEGER) <> 0 THEN CAST(f.total_impuestos AS INTEGER)
+                ELSE COALESCE(lt.iva_calc, 0)
+            END AS total_impuestos,
+            CASE
+                WHEN CAST(f.total AS INTEGER) <> 0 THEN CAST(f.total AS INTEGER)
+                ELSE COALESCE(lt.total_calc, 0)
+            END AS total,
+            f.estado,
+            COALESCE(f.es_entidad_publica, 0) AS es_entidad_publica
+        FROM facturas f
+        JOIN clientes c ON c.id = f.cliente_id
+        JOIN series_facturacion s ON s.id = f.serie_id
+        LEFT JOIN (
+            SELECT
+                factura_id,
+                CAST(ROUND(SUM(ROUND(cantidad * precio_unitario))) AS INTEGER) AS subtotal_calc,
+                CAST(ROUND(SUM(ROUND(ROUND(cantidad * precio_unitario) * tipo_iva / 100.0))) AS INTEGER) AS iva_calc,
+                CAST(ROUND(SUM(
+                    ROUND(cantidad * precio_unitario) +
+                    ROUND(ROUND(cantidad * precio_unitario) * tipo_iva / 100.0)
+                )) AS INTEGER) AS total_calc
+            FROM lineas_factura
+            GROUP BY factura_id
+        ) lt ON lt.factura_id = f.id
+        WHERE f.id = ?1 AND f.empresa_id = ?2
+        LIMIT 1
+        "#,
+    )
+    .bind(factura_id)
+    .bind(empresa_id)
+    .fetch_optional(state.inner())
+    .await
+    .map_err(|e| ApiError::from(AppError::from(e)))?
+    .ok_or_else(|| {
+        ApiError::from(AppError::NotFound(format!(
+            "No existe la factura {factura_id} para la empresa {empresa_id}"
+        )))
+    })?;
+
+    let lineas = sqlx::query_as::<_, LineaDetalleRow>(
+        r#"
+        SELECT
+            id,
+            descripcion,
+            cantidad,
+            CAST(precio_unitario AS INTEGER) AS precio_unitario,
+            tipo_iva,
+            CAST(total_linea AS INTEGER) AS total_linea
+        FROM lineas_factura
+        WHERE factura_id = ?1
+        ORDER BY id ASC
+        "#,
+    )
+    .bind(factura_id)
+    .fetch_all(state.inner())
+    .await
+    .map_err(|e| ApiError::from(AppError::from(e)))?;
+
+    Ok(FacturaDetalleResponse {
+        id: header.id,
+        numero: header.numero,
+        serie_prefijo: header.serie_prefijo,
+        fecha_emision: header.fecha_emision,
+        cliente_nombre: header.cliente_nombre,
+        cliente_nif: header.cliente_nif,
+        subtotal: header.subtotal,
+        total_impuestos: header.total_impuestos,
+        total: header.total,
+        estado: header.estado,
+        es_entidad_publica: header.es_entidad_publica,
+        lineas,
+    })
 }
