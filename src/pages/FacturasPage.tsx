@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   Plus,
   FileText,
@@ -98,6 +99,7 @@ export function FacturasPage() {
   const [pdfLoadingId, setPdfLoadingId] = useState<number | null>(null);
   const [xmlLoadingId, setXmlLoadingId] = useState<number | null>(null);
   const [qrLoadingId, setQrLoadingId] = useState<number | null>(null);
+  const [pdfPreview, setPdfPreview] = useState<{ url: string; path: string; title: string } | null>(null);
   const [qrDialogData, setQrDialogData] = useState<QrLegalResponse | null>(null);
   const [previewData, setPreviewData] = useState<FacturaDetalle | null>(null);
   const [previewLoadingId, setPreviewLoadingId] = useState<number | null>(null);
@@ -182,14 +184,14 @@ export function FacturasPage() {
     setPdfLoadingId(f.id);
     try {
       const ruta = await api.generarPdf(f.id, empresa.id);
-      toast.success(`PDF generado: ${f.serie_prefijo}-${String(f.numero).padStart(4, "0")}`, {
+      const titulo = `${f.serie_prefijo}-${String(f.numero).padStart(4, "0")}`;
+      toast.success(`PDF generado: ${titulo}`, {
         description: ruta,
-        action: {
-          label: "Abrir",
-          onClick: () => api.abrirArchivo(ruta),
-        },
-        duration: 8000,
+        duration: 5000,
       });
+      // Abrir vista previa automáticamente
+      const assetUrl = convertFileSrc(ruta);
+      setPdfPreview({ url: assetUrl, path: ruta, title: titulo });
     } catch (err: unknown) {
       const msg =
         typeof err === "object" && err !== null && "message" in err
@@ -207,13 +209,21 @@ export function FacturasPage() {
     setActionError(null);
     setXmlLoadingId(f.id);
     try {
-      await api.generarFacturaeAutofirma(f.id, empresa.id);
+      toast.loading("Abriendo AutoFirma — selecciona tu certificado y firma…", {
+        id: "facturae-flow",
+      });
+      const ruta = await api.generarYFirmarFacturae(f.id, empresa.id);
+      toast.success(
+        `Facturae firmada: ${f.serie_prefijo}-${String(f.numero).padStart(4, "0")}`,
+        { id: "facturae-flow", description: ruta, duration: 6000 }
+      );
     } catch (err: unknown) {
-      setActionError(
+      const msg =
         typeof err === "object" && err !== null && "message" in err
           ? (err as { message: string }).message
-          : String(err)
-      );
+          : String(err);
+      setActionError(msg);
+      toast.error("Error al firmar Facturae", { id: "facturae-flow", description: msg });
     } finally {
       setXmlLoadingId(null);
     }
@@ -551,7 +561,7 @@ export function FacturasPage() {
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent side="top" className="text-xs">
-                              Generar Facturae (XML firmado)
+                              Generar y firmar Facturae con AutoFirma
                             </TooltipContent>
                           </Tooltip>
                         )}
@@ -715,12 +725,52 @@ export function FacturasPage() {
                     ) : (
                       <FileCode2 className="size-3.5" />
                     )}
-                    Generar Facturae
+                    Firmar Facturae con AutoFirma
                   </Button>
                 )}
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Diálogo Vista Previa PDF ───────────────────────────────── */}
+      <Dialog open={!!pdfPreview} onOpenChange={(open) => !open && setPdfPreview(null)}>
+        <DialogContent className="max-w-4xl w-[92vw] h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
+          <DialogHeader className="px-4 pt-4 pb-3 border-b border-border shrink-0">
+            <DialogTitle className="flex items-center gap-2 text-sm">
+              <FileText className="size-4 text-blue-600" />
+              Vista previa — {pdfPreview?.title}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              {pdfPreview?.path}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 min-h-0 bg-muted/30">
+            {pdfPreview && (
+              <iframe
+                src={pdfPreview.url}
+                title={`PDF ${pdfPreview.title}`}
+                className="w-full h-full border-0"
+              />
+            )}
+          </div>
+
+          <div className="flex justify-between items-center px-4 py-3 border-t border-border shrink-0 gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 text-xs"
+              onClick={() => pdfPreview && api.abrirArchivo(pdfPreview.path)}
+            >
+              <ExternalLink className="size-3.5" />
+              Abrir con visor del sistema
+            </Button>
+            <Button size="sm" onClick={() => setPdfPreview(null)} className="text-xs">
+              Cerrar
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

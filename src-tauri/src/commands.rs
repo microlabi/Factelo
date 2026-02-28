@@ -15,7 +15,6 @@ use crate::{
         Parties, Party, Tax, TaxAmount, TaxIdentification, TaxPeriod, TaxesOutputs,
     },
     error::{ApiError, AppError, AppResult, CommandResult},
-    xades::sign_xml_xades,
 };
 
 #[derive(Debug, Clone, Deserialize)]
@@ -486,157 +485,158 @@ struct FacturaeLineRow {
     total_linea: i64,
 }
 
+// ─── generar_y_firmar_facturae ────────────────────────────────────────────────
+//
+// Genera el XML Facturae 3.2.x e invoca AutoFirma para que el usuario elija
+// su certificado y firme. Guarda el resultado y devuelve la ruta del archivo.
+
 #[tauri::command]
-pub async fn generar_facturae_xml(
+pub async fn generar_y_firmar_facturae(
     app: tauri::AppHandle,
     state: tauri::State<'_, DbPool>,
     factura_id: i64,
     empresa_id: i64,
 ) -> CommandResult<String> {
-    generar_facturae_xml_internal(app, &state, factura_id, empresa_id)
+    generar_y_firmar_facturae_internal(app, &state, factura_id, empresa_id)
         .await
         .map_err(ApiError::from)
 }
 
-async fn generar_facturae_xml_internal(
+async fn generar_y_firmar_facturae_internal(
     app: tauri::AppHandle,
     db: &DbPool,
     factura_id: i64,
     empresa_id: i64,
 ) -> AppResult<String> {
-    if factura_id <= 0 || empresa_id <= 0 {
-        return Err(AppError::Validation(
-            "factura_id y empresa_id deben ser mayores que cero".to_string(),
-        ));
+    use std::process::Command;
+
+    let (unsigned_xml, serie_prefijo, numero, fecha_emision) =
+        build_facturae_sin_firmar_interno(db, factura_id, empresa_id).await?;
+
+    // ── Archivos temporales ──────────────────────────────────────────────────
+    let tmp_dir = std::env::temp_dir();
+    let unsigned_path = tmp_dir.join("factelo_unsigned.xml");
+    let signed_path = tmp_dir.join("factelo_signed.xml");
+
+    let _ = std::fs::remove_file(&signed_path);
+    std::fs::write(&unsigned_path, unsigned_xml.as_bytes()).map_err(AppError::Io)?;
+
+    // ── Ejecutar AutoFirma ───────────────────────────────────────────────────
+    let autofirma_bin = autofirma_binary_path();
+    let status = Command::new(&autofirma_bin)
+        .arg("sign")
+        .arg("-certgui")
+        .arg("-store")
+        .arg("windows")
+        .arg("-i")
+        .arg(&unsigned_path)
+        .arg("-o")
+        .arg(&signed_path)
+        .arg("-format")
+        .arg("facturae")
+        .arg("-algorithm")
+        .arg("sha256")
+        .status()
+        .map_err(|e| {
+            AppError::Internal(format!(
+                "No se pudo lanzar AutoFirma ({}): {}. \
+                 Asegúrate de que AutoFirma está instalado.",
+                autofirma_bin.display(),
+                e
+            ))
+        })?;
+
+    let _ = std::fs::remove_file(&unsigned_path);
+
+    if !status.success() {
+        let _ = std::fs::remove_file(&signed_path);
+        return Err(AppError::Internal(format!(
+            "AutoFirma terminó con código {:?}. \
+             El usuario puede haber cancelado la firma o no tiene certificado instalado.",
+            status.code()
+        )));
     }
 
-    let invoice = sqlx::query_as::<_, FacturaeInvoiceRow>(
-        r#"
-        SELECT
-            f.numero,
-            f.fecha_emision,
-            CAST(f.subtotal AS INTEGER) AS subtotal,
-            CAST(f.total_impuestos AS INTEGER) AS total_impuestos,
-            CAST(f.total AS INTEGER) AS total,
-            s.prefijo AS serie_prefijo,
-            e.nombre AS empresa_nombre,
-            e.nif AS empresa_nif,
-            e.direccion AS empresa_direccion,
-            COALESCE(e.tipo_persona, 'J') AS empresa_tipo_persona,
-            COALESCE(e.codigo_postal, '00000') AS empresa_codigo_postal,
-            COALESCE(e.poblacion, 'N/A') AS empresa_poblacion,
-            COALESCE(e.provincia, 'N/A') AS empresa_provincia,
-            c.nombre AS cliente_nombre,
-            c.nif AS cliente_nif,
-            c.direccion AS cliente_direccion,
-            COALESCE(c.tipo_persona, 'J') AS cliente_tipo_persona,
-            COALESCE(c.codigo_postal, '00000') AS cliente_codigo_postal,
-            COALESCE(c.poblacion, 'N/A') AS cliente_poblacion,
-            COALESCE(c.provincia, 'N/A') AS cliente_provincia,
-            COALESCE(f.es_entidad_publica, 0) AS es_entidad_publica,
-            f.dir3_oficina_contable,
-            f.dir3_organo_gestor,
-            f.dir3_unidad_tramitadora,
-            f.tipo_rectificativa,
-            f.numero_factura_rectificada,
-            f.serie_factura_rectificada
-        FROM facturas f
-        INNER JOIN empresas e ON e.id = f.empresa_id
-        INNER JOIN clientes c ON c.id = f.cliente_id
-        INNER JOIN series_facturacion s ON s.id = f.serie_id
-        WHERE f.id = ?1 AND f.empresa_id = ?2
-        LIMIT 1
-        "#,
-    )
-    .bind(factura_id)
-    .bind(empresa_id)
-    .fetch_optional(db)
-    .await?
-    .ok_or_else(|| {
-        AppError::NotFound(format!(
-            "No existe la factura {factura_id} para la empresa {empresa_id}"
+    let signed_xml = std::fs::read_to_string(&signed_path).map_err(|e| {
+        AppError::Internal(format!(
+            "AutoFirma terminó correctamente pero no se encontró el archivo \
+             de salida ({}): {}",
+            signed_path.display(),
+            e
         ))
     })?;
+    let _ = std::fs::remove_file(&signed_path);
 
-    let lines = sqlx::query_as::<_, FacturaeLineRow>(
-        r#"
-        SELECT
-            descripcion,
-            cantidad,
-            CAST(precio_unitario AS INTEGER) AS precio_unitario,
-            tipo_iva,
-            CAST(total_linea AS INTEGER) AS total_linea
-        FROM lineas_factura
-        WHERE factura_id = ?1
-        ORDER BY id ASC
-        "#,
-    )
-    .bind(factura_id)
-    .fetch_all(db)
-    .await?;
-
-    if lines.is_empty() {
-        return Err(AppError::Validation(
-            "No se puede generar Facturae sin líneas de factura".to_string(),
-        ));
-    }
-
-    // Obtener el HWND de la ventana principal para anclar el diálogo del SO
-    let hwnd = app
-        .get_webview_window("main")
-        .and_then(|w| w.hwnd().ok())
-        .map(|h| h.0 as isize);
-
-    let facturae_doc = build_facturae_doc(&invoice, &lines)?;
-
-    let unsigned_xml = facturae_to_xml(&facturae_doc)?;
-    let signed_or_unsigned = match sign_xml_xades(&unsigned_xml, hwnd) {
-        Ok(signed) => signed,
-        Err(AppError::NotImplemented(_)) => unsigned_xml,
-        Err(error) => return Err(error),
-    };
-
+    // ── Guardar resultado ────────────────────────────────────────────────────
     let output_dir = app
         .path()
         .resolve("Factelo/facturae", BaseDirectory::Document)
-        .map_err(|error| {
+        .map_err(|e| {
             AppError::Internal(format!(
-                "No se pudo resolver el directorio de salida de Facturae: {error}"
+                "No se pudo resolver el directorio de salida de Facturae: {e}"
             ))
         })?;
 
     std::fs::create_dir_all(&output_dir)?;
     let output_path = output_dir.join(format!(
         "facturae_{}_{}_{}.xml",
-        invoice.serie_prefijo,
-        invoice.numero,
-        invoice.fecha_emision.replace('-', "")
+        serie_prefijo,
+        numero,
+        fecha_emision.replace('-', "")
     ));
-    std::fs::write(&output_path, signed_or_unsigned)?;
+    std::fs::write(&output_path, signed_xml.as_bytes())?;
 
     Ok(output_path.to_string_lossy().to_string())
 }
 
-// ─── generar_facturae_autofirma ───────────────────────────────────────────────
-
-#[tauri::command]
-pub async fn generar_facturae_autofirma(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, DbPool>,
-    factura_id: i64,
-    empresa_id: i64,
-) -> CommandResult<String> {
-    generar_facturae_autofirma_internal(app, &state, factura_id, empresa_id)
-        .await
-        .map_err(ApiError::from)
+fn autofirma_binary_path() -> std::path::PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        // La instalación de AutoFirma coloca el CLI en un subdirectorio "Autofirma"
+        let candidates = [
+            r"C:\Program Files\AutoFirma\Autofirma\AutofirmaCommandLine.exe",
+            r"C:\Program Files (x86)\AutoFirma\Autofirma\AutofirmaCommandLine.exe",
+            // Versiones antiguas sin subcarpeta
+            r"C:\Program Files\AutoFirma\AutofirmaCommandLine.exe",
+            r"C:\Program Files (x86)\AutoFirma\AutofirmaCommandLine.exe",
+        ];
+        for path in &candidates {
+            let p = std::path::PathBuf::from(path);
+            if p.exists() {
+                return p;
+            }
+        }
+        std::path::PathBuf::from("AutofirmaCommandLine.exe")
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let candidates = [
+            "/Applications/AutoFirma.app/Contents/MacOS/AutofirmaCommandLine",
+            "/Applications/AutoFirma.app/Contents/MacOS/AutoFirmaCommandLine",
+        ];
+        for path in &candidates {
+            let p = std::path::PathBuf::from(path);
+            if p.exists() {
+                return p;
+            }
+        }
+        std::path::PathBuf::from("AutofirmaCommandLine")
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        std::path::PathBuf::from("autofirma")
+    }
 }
 
-async fn generar_facturae_autofirma_internal(
-    app: tauri::AppHandle,
+// ─── Helper interno: genera el XML Facturae sin firmar ───────────────────────
+//
+// Devuelve (xml_sin_firmar, serie_prefijo, numero, fecha_emision).
+
+async fn build_facturae_sin_firmar_interno(
     db: &DbPool,
     factura_id: i64,
     empresa_id: i64,
-) -> AppResult<String> {
+) -> AppResult<(String, String, i64, String)> {
     if factura_id <= 0 || empresa_id <= 0 {
         return Err(AppError::Validation(
             "factura_id y empresa_id deben ser mayores que cero".to_string(),
@@ -715,148 +715,9 @@ async fn generar_facturae_autofirma_internal(
     }
 
     let facturae_doc = build_facturae_doc(&invoice, &lines)?;
-
     let unsigned_xml = facturae_to_xml(&facturae_doc)?;
 
-    // Guardar XML sin firmar en directorio temporal
-    let temp_dir = std::env::temp_dir();
-    let unsigned_path = temp_dir.join(format!("factelo_unsigned_{}.xml", factura_id));
-    std::fs::write(&unsigned_path, &unsigned_xml)?;
-
-    // Ruta de salida definitiva en Documentos/Factelo/facturae/
-    let output_dir = app
-        .path()
-        .resolve("Factelo/facturae", BaseDirectory::Document)
-        .map_err(|error| {
-            AppError::Internal(format!(
-                "No se pudo resolver el directorio de salida de Facturae: {error}"
-            ))
-        })?;
-    std::fs::create_dir_all(&output_dir)?;
-    let filename = format!(
-        "facturae_{}_{}_{}_firmada.xml",
-        invoice.serie_prefijo,
-        invoice.numero,
-        invoice.fecha_emision.replace('-', "")
-    );
-    let output_path = output_dir.join(&filename);
-
-    // Buscar AutoFirma
-    let autofirma_exe = find_autofirma_path().ok_or_else(|| {
-        AppError::NotFound(
-            "AutoFirma no está instalado. Descárgalo desde https://firmaelectronica.gob.es/Home/Descargas.html e instálalo para poder firmar facturas para entidades públicas.".to_string(),
-        )
-    })?;
-
-    // Lanzar AutoFirma y esperar a que el usuario firme (operación bloqueante - abre GUI)
-    let unsigned_path_str = unsigned_path.to_string_lossy().to_string();
-    let output_path_str = output_path.to_string_lossy().to_string();
-
-    let output = tokio::task::spawn_blocking(move || {
-        std::process::Command::new(&autofirma_exe)
-            .args([
-                "sign",
-                "-gui",           // abre diálogo gráfico para seleccionar certificado
-                "-i",
-                &unsigned_path_str,
-                "-o",
-                &output_path_str,
-                "-format",
-                "facturae",       // valor correcto (minúsculas)
-                "-store",
-                "windows",        // almacén de certificados de Windows
-            ])
-            .output()
-    })
-    .await
-    .map_err(|join_err| AppError::Internal(format!("Error al esperar a AutoFirma: {join_err}")))?
-    .map_err(|io_err| AppError::Internal(format!("No se pudo ejecutar AutoFirma: {io_err}")))?;
-
-    // Limpiar fichero temporal
-    let _ = std::fs::remove_file(&unsigned_path);
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let detail = if !stderr.trim().is_empty() {
-            stderr.trim().to_string()
-        } else if !stdout.trim().is_empty() {
-            stdout.trim().to_string()
-        } else {
-            "Sin detalle adicional (puede que el usuario cancelara la selección de certificado)"
-                .to_string()
-        };
-        return Err(AppError::Internal(format!(
-            "AutoFirma terminó con error. {detail}"
-        )));
-    }
-
-    if !output_path.exists() {
-        return Err(AppError::Internal(
-            "AutoFirma no generó el fichero firmado. Puede que el usuario cancelara la operación."
-                .to_string(),
-        ));
-    }
-
-    Ok(output_path.to_string_lossy().to_string())
-}
-
-fn find_autofirma_path() -> Option<std::path::PathBuf> {
-    // Primero intentamos el ejecutable de línea de comandos (no abre GUI completa)
-    let candidates = [
-        r"C:\Program Files\Autofirma\Autofirma\AutofirmaCommandLine.exe",
-        r"C:\Program Files (x86)\Autofirma\Autofirma\AutofirmaCommandLine.exe",
-        r"C:\Program Files\AutoFirma\AutoFirma\AutofirmaCommandLine.exe",
-        r"C:\Program Files\Autofirma\Autofirma\Autofirma.exe",
-        r"C:\Program Files (x86)\Autofirma\Autofirma\Autofirma.exe",
-        r"C:\Program Files\AutoFirma\AutoFirma\AutoFirma.exe",
-        r"C:\Program Files\AutoFirma\AutoFirma.exe",
-        r"C:\Program Files (x86)\AutoFirma\AutoFirma.exe",
-    ];
-    candidates
-        .iter()
-        .map(std::path::PathBuf::from)
-        .find(|p| p.exists())
-}
-
-// ─── firmar_factura_silenciosa ────────────────────────────────────────────────
-//
-// Genera el XML Facturae 3.2.x y firma en modo batch (sin GUI) usando
-// AutoFirma CLI con el certificado .p12/.pfx almacenado en la empresa y la
-// contraseña recibida desde el frontend.  Nunca guarda la contraseña.
-
-#[tauri::command]
-pub async fn firmar_factura_silenciosa(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, DbPool>,
-    factura_id: i64,
-    empresa_id: i64,
-) -> CommandResult<String> {
-    firmar_factura_silenciosa_internal(app, &state, factura_id, empresa_id)
-        .await
-        .map_err(ApiError::from)
-}
-
-async fn firmar_factura_silenciosa_internal(
-    app: tauri::AppHandle,
-    db: &DbPool,
-    factura_id: i64,
-    empresa_id: i64,
-) -> AppResult<String> {
-    // Delega en generar_facturae_xml_internal que:
-    // 1. Genera el XML Facturae sin firmar.
-    // 2. Llama a sign_xml_xades → muestra el diálogo nativo del SO para
-    //    elegir certificado → firma con NCrypt → inyecta <ds:Signature>.
-    let xml_path =
-        generar_facturae_xml_internal(app, db, factura_id, empresa_id).await?;
-
-    // Marcar la factura como firmada con la implementación XAdES nativa
-    sqlx::query("UPDATE facturas SET firma_app = 'XADES_NATIVO' WHERE id = ?1")
-        .bind(factura_id)
-        .execute(db)
-        .await?;
-
-    Ok(xml_path)
+    Ok((unsigned_xml, invoice.serie_prefijo, invoice.numero, invoice.fecha_emision))
 }
 
 fn decimal_from_cents(cents: i64) -> rust_decimal::Decimal {
@@ -1811,3 +1672,4 @@ pub async fn obtener_factura_detalle(
         lineas,
     })
 }
+

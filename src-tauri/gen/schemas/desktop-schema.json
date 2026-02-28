@@ -2217,24 +2217,6 @@
           "markdownDescription": "Crea una nueva serie de facturación"
         },
         {
-          "description": "Genera y firma Facturae con el almacén de certificados del sistema",
-          "type": "string",
-          "const": "allow-firmar-factura-silenciosa",
-          "markdownDescription": "Genera y firma Facturae con el almacén de certificados del sistema"
-        },
-        {
-          "description": "Genera XML Facturae sin firmar y lanza AutoFirma para firma digital",
-          "type": "string",
-          "const": "allow-generar-facturae-autofirma",
-          "markdownDescription": "Genera XML Facturae sin firmar y lanza AutoFirma para firma digital"
-        },
-        {
-          "description": "Permite invocar el comando generar_facturae_xml",
-          "type": "string",
-          "const": "allow-generar-facturae-xml",
-          "markdownDescription": "Permite invocar el comando generar_facturae_xml"
-        },
-        {
           "description": "Exporta el fichero XML de inspección tributaria",
           "type": "string",
           "const": "allow-generar-fichero-inspeccion",
@@ -2245,6 +2227,12 @@
           "type": "string",
           "const": "allow-generar-qr-legal",
           "markdownDescription": "Genera el QR técnico AEAT de notariado para una factura"
+        },
+        {
+          "description": "Genera el XML Facturae e invoca AutoFirma para firmarlo",
+          "type": "string",
+          "const": "allow-generar-y-firmar-facturae",
+          "markdownDescription": "Genera el XML Facturae e invoca AutoFirma para firmarlo"
         },
         {
           "description": "Permite invocar el comando generate_pdf",

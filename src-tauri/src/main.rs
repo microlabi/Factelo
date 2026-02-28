@@ -7,7 +7,6 @@ mod facturae;
 mod keychain;
 mod logger;
 mod pdf;
-mod xades;
 
 use tauri::Manager;
 
@@ -20,9 +19,7 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             commands::insert_factura,
-            commands::generar_facturae_xml,
-            commands::generar_facturae_autofirma,
-            commands::firmar_factura_silenciosa,
+            commands::generar_y_firmar_facturae,
             commands::verificar_onboarding,
             commands::obtener_empresas,
             commands::crear_empresa,

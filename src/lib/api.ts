@@ -276,36 +276,16 @@ export const api = {
   ): Promise<FacturaDetalle> =>
     invoke("obtener_factura_detalle", { facturaId, empresaId }),
 
-  generarFacturaeXml: (
-    facturaId: number,
-    empresaId: number,
-    certPassword: string
-  ): Promise<string> =>
-    invoke("generar_facturae_xml", { facturaId, empresaId, certPassword }),
-
   /**
-   * Genera el XML Facturae sin firmar y lanza AutoFirma para que el usuario
-   * firme con su certificado (FNMT, DNIe, etc.). Devuelve la ruta del XML
-   * firmado guardado en Documentos/Factelo/facturae/.
-   * No se almacena ningún certificado ni contraseña.
+   * Genera el XML Facturae 3.2.x, lo firma con AutoFirma (el usuario elige
+   * su certificado en la ventana de AutoFirma) y guarda el resultado.
+   * Devuelve la ruta del archivo XML firmado en Documentos/Factelo/facturae/.
    */
-  generarFacturaeAutofirma: (
+  generarYFirmarFacturae: (
     facturaId: number,
     empresaId: number
   ): Promise<string> =>
-    invoke("generar_facturae_autofirma", { facturaId, empresaId }),
-
-  /**
-   * Genera y firma el XML Facturae 3.2.x en modo batch (silencioso), sin
-   * abrir la GUI de AutoFirma. Utiliza el certificado .p12/.pfx configurado
-   * firma XAdES-EPES usando el almacén de certificados del sistema operativo.
-   * Muestra el diálogo nativo de Windows para seleccionar el certificado.
-   */
-  firmarFacturaSilenciosa: (
-    facturaId: number,
-    empresaId: number
-  ): Promise<string> =>
-    invoke("firmar_factura_silenciosa", { facturaId, empresaId }),
+    invoke("generar_y_firmar_facturae", { facturaId, empresaId }),
 
   // ── PDF ────────────────────────────────────────────────────────────────────
   generarPdf: (facturaId: number, empresaId: number): Promise<string> =>

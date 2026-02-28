@@ -9,9 +9,9 @@ description = "Permite invocar el comando generate_pdf"
 commands.allow = ["generate_pdf"]
 
 [[permission]]
-identifier = "allow-generar-facturae-xml"
-description = "Permite invocar el comando generar_facturae_xml"
-commands.allow = ["generar_facturae_xml"]
+identifier = "allow-generar-y-firmar-facturae"
+description = "Genera el XML Facturae e invoca AutoFirma para firmarlo"
+commands.allow = ["generar_y_firmar_facturae"]
 
 [[permission]]
 identifier = "allow-verificar-onboarding"
@@ -62,16 +62,6 @@ commands.allow = ["crear_producto"]
 identifier = "allow-obtener-dashboard-stats"
 description = "Obtiene KPIs del dashboard"
 commands.allow = ["obtener_dashboard_stats"]
-
-[[permission]]
-identifier = "allow-generar-facturae-autofirma"
-description = "Genera XML Facturae sin firmar y lanza AutoFirma para firma digital"
-commands.allow = ["generar_facturae_autofirma"]
-
-[[permission]]
-identifier = "allow-firmar-factura-silenciosa"
-description = "Genera y firma Facturae con el almacén de certificados del sistema"
-commands.allow = ["firmar_factura_silenciosa"]
 
 [[permission]]
 identifier = "allow-listar-facturas"

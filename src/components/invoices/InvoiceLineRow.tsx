@@ -21,6 +21,7 @@ interface InvoiceLineRowProps {
   index: number;
   canDelete: boolean;
   onDelete: () => void;
+  esAutonomo: boolean;
 }
 
 // ─── Celda de campo con mensaje de error inline ──────────────────────────────
@@ -46,7 +47,7 @@ function FieldCell({ error, className, children }: FieldCellProps) {
 
 // ─── Fila de línea de factura ─────────────────────────────────────────────────
 
-export function InvoiceLineRow({ index, canDelete, onDelete }: InvoiceLineRowProps) {
+export function InvoiceLineRow({ index, canDelete, onDelete, esAutonomo }: InvoiceLineRowProps) {
   const {
     register,
     control,
@@ -59,7 +60,14 @@ export function InvoiceLineRow({ index, canDelete, onDelete }: InvoiceLineRowPro
   const totals = calcLine(lineValues);
 
   return (
-    <div className="group relative grid grid-cols-[20px_1fr_80px_100px_110px_110px_100px_36px] items-start gap-2 rounded-lg border border-transparent px-1 py-2 transition-colors hover:border-border hover:bg-muted/20">
+    <div
+      className={cn(
+        "group relative grid items-start gap-2 rounded-lg border border-transparent px-1 py-2 transition-colors hover:border-border hover:bg-muted/20",
+        esAutonomo
+          ? "grid-cols-[20px_1fr_80px_100px_110px_110px_100px_36px]"
+          : "grid-cols-[20px_1fr_80px_100px_110px_100px_36px]"
+      )}
+    >
       {/* Handle visual (sin DnD por ahora) */}
       <div className="flex h-10 items-center justify-center cursor-grab opacity-0 group-hover:opacity-40 transition-opacity">
         <GripVertical className="size-3.5 text-muted-foreground" />
@@ -143,7 +151,8 @@ export function InvoiceLineRow({ index, canDelete, onDelete }: InvoiceLineRowPro
         />
       </FieldCell>
 
-      {/* Retención */}
+      {/* Retención (solo autónomo) */}
+      {esAutonomo && (
       <FieldCell error={lineErrors?.tipo_retencion?.message}>
         <Controller
           control={control}
@@ -172,6 +181,7 @@ export function InvoiceLineRow({ index, canDelete, onDelete }: InvoiceLineRowPro
           )}
         />
       </FieldCell>
+      )}
 
       {/* Total línea (calculado) */}
       <div className="flex h-10 items-center justify-end">

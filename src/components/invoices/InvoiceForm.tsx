@@ -24,6 +24,7 @@ import {
   AlertTriangle,
   ShieldCheck,
   PenLine,
+  UserRound,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -119,10 +120,10 @@ interface InsertFacturaResponse {
 // ─── Estado del envío ─────────────────────────────────────────────────────────
 
 type SubmitPhase =
-  | { type: "idle" }
-  | { type: "saving" }
-  | { type: "generating_xml" }
-  | { type: "success"; response: InsertFacturaResponse; xmlGenerated: boolean; xmlPath?: string }
+  | { type: "inicial" }
+  | { type: "guardando" }
+  | { type: "generando_xml" }
+  | { type: "exito"; response: InsertFacturaResponse; xmlGenerated: boolean; xmlPath?: string }
   | { type: "error"; error: ApiError | string };
 
 // ─── Componente de campo con label y error unificados ────────────────────────
@@ -272,12 +273,12 @@ function TotalsPanel({
         </div>
       )}
 
-      {phase.type === "generating_xml" && (
+      {phase.type === "generando_xml" && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-900/60 dark:bg-amber-950/30">
           <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-amber-600 dark:text-amber-400" />
           <div>
             <p className="font-medium text-amber-700 dark:text-amber-400">
-              Aplicando firma XAdES…
+              Aplicando firma integrada XAdES…
             </p>
             <p className="mt-0.5 text-[11px] text-amber-600/80 dark:text-amber-500">
               Procesando el certificado y firmando el XML Facturae 3.2.x…
@@ -286,7 +287,7 @@ function TotalsPanel({
         </div>
       )}
 
-      {phase.type === "success" && (
+      {phase.type === "exito" && (
         <div className="flex items-start gap-2 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm dark:border-emerald-900 dark:bg-emerald-950/30">
           <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
           <div>
@@ -299,7 +300,7 @@ function TotalsPanel({
             {phase.xmlGenerated && (
               <>
                 <p className="mt-1 text-[11px] text-emerald-600/80 dark:text-emerald-500">
-                  ✓ XML Facturae 3.2.x firmado (AutoFirma batch)
+                  ✓ XML Facturae 3.2.x firmado (firma XAdES integrada)
                 </p>
                 {phase.xmlPath && (
                   <p className="mt-1 flex items-center gap-1 text-[11px] text-emerald-600/80 dark:text-emerald-500 break-all">
@@ -322,12 +323,12 @@ function TotalsPanel({
           disabled={isSubmitting}
           onClick={onSaveDraft}
         >
-          {phase.type === "saving" ? (
+          {phase.type === "guardando" ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
             <Save className="size-4" />
           )}
-          {phase.type === "saving" ? "Guardando…" : "Guardar borrador"}
+          {phase.type === "guardando" ? "Guardando…" : "Guardar borrador"}
         </Button>
 
         <Button
@@ -336,14 +337,14 @@ function TotalsPanel({
           disabled={isSubmitting}
           onClick={onSaveAndGenerate}
         >
-          {phase.type === "generating_xml" || phase.type === "saving" && isSubmitting ? (
+          {phase.type === "generando_xml" || phase.type === "guardando" && isSubmitting ? (
             <Loader2 className="size-4 animate-spin" />
           ) : esEntidadPublica ? (
             <FileCode2 className="size-4" />
           ) : (
             <Save className="size-4" />
           )}
-          {phase.type === "generating_xml"
+          {phase.type === "generando_xml"
             ? "Aplicando firma XAdES…"
             : esEntidadPublica
             ? "Guardar y Firmar"
@@ -362,9 +363,16 @@ function TotalsPanel({
 
 // ─── Cabecera de la tabla de líneas ───────────────────────────────────────────
 
-function LinesTableHeader() {
+function LinesTableHeader({ esAutonomo }: { esAutonomo: boolean }) {
   return (
-    <div className="grid grid-cols-[20px_1fr_80px_100px_110px_110px_100px_36px] gap-2 px-1 pb-1">
+    <div
+      className={cn(
+        "grid gap-2 px-1 pb-1",
+        esAutonomo
+          ? "grid-cols-[20px_1fr_80px_100px_110px_110px_100px_36px]"
+          : "grid-cols-[20px_1fr_80px_100px_110px_100px_36px]"
+      )}
+    >
       <div />
       <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         Descripción
@@ -378,9 +386,11 @@ function LinesTableHeader() {
       <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         IVA
       </span>
-      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        Retención
-      </span>
+      {esAutonomo && (
+        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Retención
+        </span>
+      )}
       <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground text-right">
         Total línea
       </span>
@@ -394,12 +404,12 @@ function LinesTableHeader() {
 export function InvoiceForm() {
   const empresa = useSessionStore(selectEmpresa);
   const navigate = useNavigate();
-  const [submitPhase, setSubmitPhase] = useState<SubmitPhase>({ type: "idle" });
+  const [submitPhase, setSubmitPhase] = useState<SubmitPhase>({ type: "inicial" });
 
   // ── Estado del dialog de firma XAdES (almacén del sistema) ──────────
-  type SignUIPhase = "confirm" | "signing" | "success" | "error";
+  type SignUIPhase = "confirmar" | "firmando" | "exito" | "error";
   const [signDialogOpen, setSignDialogOpen] = useState(false);
-  const [signUIPhase, setSignUIPhase] = useState<SignUIPhase>("confirm");
+  const [signUIPhase, setSignUIPhase] = useState<SignUIPhase>("confirmar");
   const [signXmlPath, setSignXmlPath] = useState("");
   const [signError, setSignError] = useState("");
   const [pendingFormData, setPendingFormData] = useState<InvoiceFormValues | null>(null);
@@ -437,6 +447,22 @@ export function InvoiceForm() {
   const esEntidadPublica = watch("es_entidad_publica");
   const tipoRectificativa = watch("tipo_rectificativa");
 
+  // Estado local para distinguir Empresa vs Autónomo (ambos no-públicos)
+  const [tipoDestinatario, setTipoDestinatario] = useState<"empresa" | "autonomo" | "publica">(
+    esEntidadPublica ? "publica" : "empresa"
+  );
+  const esAutonomo = tipoDestinatario === "autonomo";
+
+  // Al salir de autónomo, resetear retención de todas las líneas a 0
+  function seleccionarTipo(tipo: "empresa" | "autonomo" | "publica") {
+    if (tipo !== "autonomo") {
+      const lineas = methods.getValues("lineas");
+      lineas.forEach((_, i) => methods.setValue(`lineas.${i}.tipo_retencion`, 0));
+    }
+    setTipoDestinatario(tipo);
+    methods.setValue("es_entidad_publica", tipo === "publica");
+  }
+
   const { fields, append, remove } = useFieldArray({
     control,
     name: "lineas",
@@ -456,7 +482,7 @@ export function InvoiceForm() {
       return;
     }
 
-    setSubmitPhase({ type: "saving" });
+    setSubmitPhase({ type: "guardando" });
 
     // Calcular totales desde data.lineas (valores coercidos y validados por Zod)
     // para garantizar consistencia con lo que el usuario realmente introdujo.
@@ -523,17 +549,17 @@ export function InvoiceForm() {
 
     // Genera Facturae XML + firma XAdES si es entidad pública
     if (estado === "EMITIDA" && data.es_entidad_publica) {
-      setSubmitPhase({ type: "generating_xml" });
-      setSignUIPhase("signing");
+      setSubmitPhase({ type: "generando_xml" });
+      setSignUIPhase("firmando");
       try {
-        const xmlPath = await api.firmarFacturaSilenciosa(
+        const xmlPath = await api.generarYFirmarFacturae(
           insertResponse.id,
           empresa.id
         );
         setSignXmlPath(xmlPath);
-        setSignUIPhase("success");
+        setSignUIPhase("exito");
         setSubmitPhase({
-          type: "success",
+          type: "exito",
           response: insertResponse,
           xmlGenerated: true,
           xmlPath,
@@ -551,7 +577,7 @@ export function InvoiceForm() {
     } else {
       queryClient.invalidateQueries({ queryKey: ["facturas"] });
       setSubmitPhase({
-        type: "success",
+        type: "exito",
         response: insertResponse,
         xmlGenerated: false,
       });
@@ -569,7 +595,7 @@ export function InvoiceForm() {
   };
 
   const isSubmitting =
-    submitPhase.type === "saving" || submitPhase.type === "generating_xml";
+    submitPhase.type === "guardando" || submitPhase.type === "generando_xml";
 
   const onSaveDraft = handleSubmit((data) => submitInvoice(data, "BORRADOR"));
   const onSaveAndGenerate = handleSubmit((data) => {
@@ -579,7 +605,7 @@ export function InvoiceForm() {
       setPendingFormData(data);
       setSignError("");
       setSignXmlPath("");
-      setSignUIPhase("confirm");
+      setSignUIPhase("confirmar");
       setSignDialogOpen(true);
     } else {
       submitInvoice(data, "EMITIDA");
@@ -621,13 +647,14 @@ export function InvoiceForm() {
                 <p className="mb-2 text-xs font-medium text-muted-foreground">
                   Tipo de destinatario
                 </p>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
+                  {/* Empresa */}
                   <button
                     type="button"
-                    onClick={() => setValue("es_entidad_publica", false)}
+                    onClick={() => seleccionarTipo("empresa")}
                     className={cn(
                       "flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
-                      !esEntidadPublica
+                      tipoDestinatario === "empresa"
                         ? "border-primary bg-primary/5 text-primary"
                         : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"
                     )}
@@ -635,25 +662,49 @@ export function InvoiceForm() {
                     <Building2
                       className={cn(
                         "size-4 shrink-0",
-                        !esEntidadPublica
-                          ? "text-primary"
-                          : "text-muted-foreground"
+                        tipoDestinatario === "empresa" ? "text-primary" : "text-muted-foreground"
                       )}
                     />
                     <div>
-                      <p className="font-medium leading-tight">Empresa / Particular</p>
+                      <p className="font-medium leading-tight">Empresa</p>
                       <p className="text-[11px] text-muted-foreground leading-tight mt-0.5">
-                        Factura ordinaria
+                        Persona jurídica
                       </p>
                     </div>
                   </button>
 
+                  {/* Autónomo */}
                   <button
                     type="button"
-                    onClick={() => setValue("es_entidad_publica", true)}
+                    onClick={() => seleccionarTipo("autonomo")}
                     className={cn(
                       "flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
-                      esEntidadPublica
+                      tipoDestinatario === "autonomo"
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                    )}
+                  >
+                    <UserRound
+                      className={cn(
+                        "size-4 shrink-0",
+                        tipoDestinatario === "autonomo" ? "text-primary" : "text-muted-foreground"
+                      )}
+                    />
+                    <div>
+                      <p className="font-medium leading-tight">Autónomo</p>
+                      <p className="text-[11px] text-muted-foreground leading-tight mt-0.5">
+                        Persona física
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Entidad pública */}
+                  <button
+                    type="button"
+                    onClick={() => seleccionarTipo("publica")}
+                    className={cn(
+                      "flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
+                      tipoDestinatario === "publica"
                         ? "border-amber-500 bg-amber-500/5 text-amber-700 dark:text-amber-400"
                         : "border-border bg-background text-muted-foreground hover:border-amber-400/40 hover:text-foreground"
                     )}
@@ -661,7 +712,7 @@ export function InvoiceForm() {
                     <Landmark
                       className={cn(
                         "size-4 shrink-0",
-                        esEntidadPublica
+                        tipoDestinatario === "publica"
                           ? "text-amber-600 dark:text-amber-400"
                           : "text-muted-foreground"
                       )}
@@ -669,7 +720,7 @@ export function InvoiceForm() {
                     <div>
                       <p className="font-medium leading-tight">Entidad pública</p>
                       <p className="text-[11px] text-muted-foreground leading-tight mt-0.5">
-                        Requiere Facturae + firma
+                        Facturae + firma
                       </p>
                     </div>
                   </button>
@@ -1040,7 +1091,7 @@ export function InvoiceForm() {
 
               {/* Cabecera de tabla */}
               <div className="hidden md:block">
-                <LinesTableHeader />
+                <LinesTableHeader esAutonomo={esAutonomo} />
                 <Separator className="mb-1" />
               </div>
 
@@ -1052,6 +1103,7 @@ export function InvoiceForm() {
                     index={index}
                     canDelete={fields.length > 1}
                     onDelete={() => remove(index)}
+                    esAutonomo={esAutonomo}
                   />
                 ))}
               </div>
@@ -1121,8 +1173,8 @@ export function InvoiceForm() {
         onOpenChange={(open) => {
           if (
             !open &&
-            (signUIPhase === "confirm" ||
-              signUIPhase === "success" ||
+            (signUIPhase === "confirmar" ||
+              signUIPhase === "exito" ||
               signUIPhase === "error")
           ) {
             setSignDialogOpen(false);
@@ -1132,10 +1184,10 @@ export function InvoiceForm() {
         <DialogContent
           className="sm:max-w-md"
           onInteractOutside={(e) => {
-            if (signUIPhase === "signing") e.preventDefault();
+            if (signUIPhase === "firmando") e.preventDefault();
           }}
           onEscapeKeyDown={(e) => {
-            if (signUIPhase === "signing") e.preventDefault();
+            if (signUIPhase === "firmando") e.preventDefault();
           }}
         >
           <DialogHeader>
@@ -1143,18 +1195,18 @@ export function InvoiceForm() {
               <div
                 className={cn(
                   "flex size-8 items-center justify-center rounded-lg",
-                  signUIPhase === "success"
+                  signUIPhase === "exito"
                     ? "bg-emerald-100 dark:bg-emerald-950/50"
                     : signUIPhase === "error"
                     ? "bg-destructive/10"
                     : "bg-primary/10"
                 )}
               >
-                {signUIPhase === "success" ? (
+                {signUIPhase === "exito" ? (
                   <ShieldCheck className="size-4 text-emerald-600 dark:text-emerald-400" />
                 ) : signUIPhase === "error" ? (
                   <AlertCircle className="size-4 text-destructive" />
-                ) : signUIPhase === "signing" ? (
+                ) : signUIPhase === "firmando" ? (
                   <Loader2 className="size-4 text-primary animate-spin" />
                 ) : (
                   <PenLine className="size-4 text-primary" />
@@ -1162,20 +1214,20 @@ export function InvoiceForm() {
               </div>
               <div>
                 <DialogTitle className="text-sm font-semibold">
-                  {signUIPhase === "success"
+                  {signUIPhase === "exito"
                     ? "Factura firmada correctamente"
                     : signUIPhase === "error"
                     ? "Error al firmar la factura"
-                    : signUIPhase === "signing"
+                    : signUIPhase === "firmando"
                     ? "Firmando con certificado del sistema…"
                     : "Firmar con certificado digital"}
                 </DialogTitle>
                 <DialogDescription className="text-xs mt-0.5">
-                  {signUIPhase === "confirm" &&
-                    "Se usará el almacén de certificados instalados en Windows."}
-                  {signUIPhase === "signing" &&
+                  {signUIPhase === "confirmar" &&
+                    "Se usará la firma integrada con el almacén de certificados del sistema."}
+                  {signUIPhase === "firmando" &&
                     "Guardando factura y aplicando firma XAdES-EPES…"}
-                  {signUIPhase === "success" &&
+                  {signUIPhase === "exito" &&
                     "El XML Facturae 3.2.x ha sido firmado y guardado."}
                   {signUIPhase === "error" &&
                     "Comprueba que el certificado y el dispositivo están disponibles."}
@@ -1186,13 +1238,13 @@ export function InvoiceForm() {
 
           <div className="flex flex-col gap-3 py-1">
             {/* Fase: confirmar */}
-            {signUIPhase === "confirm" && (
+            {signUIPhase === "confirmar" && (
               <div className="flex flex-col gap-2.5">
                 <div className="flex items-start gap-2.5 rounded-lg border bg-muted/30 px-3 py-3 text-xs text-foreground">
                   <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />
                   <div className="flex flex-col gap-1">
                     <p className="font-medium">
-                      Se abrirá el selector de certificados de Windows
+                      Se abrirá el selector de certificados del sistema
                     </p>
                     <p className="text-muted-foreground leading-relaxed">
                       Selecciona tu certificado digital (DNIe, FNMT, tarjeta
@@ -1212,18 +1264,18 @@ export function InvoiceForm() {
             )}
 
             {/* Fase: firmando */}
-            {signUIPhase === "signing" && (
+            {signUIPhase === "firmando" && (
               <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-400">
                 <Loader2 className="size-3.5 shrink-0 animate-spin" />
                 <span>
-                  El selector de certificados de Windows se abrirá en breve.
+                  El selector de certificados del sistema se abrirá en breve.
                   Selecciona tu certificado y acepta para continuar.
                 </span>
               </div>
             )}
 
             {/* Fase: éxito */}
-            {signUIPhase === "success" && (
+            {signUIPhase === "exito" && (
               <>
                 <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-400">
                   <CheckCircle2 className="size-3.5 shrink-0" />
@@ -1250,7 +1302,7 @@ export function InvoiceForm() {
           </div>
 
           <DialogFooter className="gap-2 sm:gap-0">
-            {signUIPhase === "confirm" && (
+            {signUIPhase === "confirmar" && (
               <>
                 <Button
                   type="button"
@@ -1271,7 +1323,7 @@ export function InvoiceForm() {
                 </Button>
               </>
             )}
-            {(signUIPhase === "success" || signUIPhase === "error") && (
+            {(signUIPhase === "exito" || signUIPhase === "error") && (
               <Button
                 type="button"
                 size="sm"
@@ -1279,10 +1331,10 @@ export function InvoiceForm() {
                 className="gap-1.5"
                 onClick={() => {
                   setSignDialogOpen(false);
-                  if (signUIPhase === "success") navigate("/facturas");
+                  if (signUIPhase === "exito") navigate("/facturas");
                 }}
               >
-                {signUIPhase === "success" ? (
+                {signUIPhase === "exito" ? (
                   <>
                     <CheckCircle2 className="size-3.5" />
                     Ver facturas

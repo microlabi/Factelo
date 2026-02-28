@@ -18,10 +18,6 @@ pub enum AppError {
     Xml(#[from] quick_xml::se::SeError),
     #[error("Error de entrada/salida: {0}")]
     Io(#[from] std::io::Error),
-    #[error("Error de certificado: {0}")]
-    Certificate(String),
-    #[error("No implementado: {0}")]
-    NotImplemented(String),
     #[error("Error interno: {0}")]
     Internal(String),
 }
@@ -40,8 +36,6 @@ impl From<AppError> for ApiError {
             AppError::Database(_) => "DATABASE_ERROR",
             AppError::Json(_) | AppError::Xml(_) => "SERIALIZATION_ERROR",
             AppError::Io(_) => "IO_ERROR",
-            AppError::Certificate(_) => "CERTIFICATE_ERROR",
-            AppError::NotImplemented(_) => "NOT_IMPLEMENTED",
             AppError::Internal(_) => "INTERNAL_ERROR",
         }
         .to_string();
