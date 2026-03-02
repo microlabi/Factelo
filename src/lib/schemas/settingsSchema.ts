@@ -38,7 +38,6 @@ export const empresaSchema = z.object({
     .or(z.literal("")),
   // Rutas locales — se rellenan a través de diálogos nativos, no por input de texto
   logo_path: z.string().optional().or(z.literal("")),
-  cert_path: z.string().optional().or(z.literal("")),
 });
 
 export type EmpresaFormValues = z.infer<typeof empresaSchema>;
@@ -53,12 +52,16 @@ export const defaultEmpresaValues: EmpresaFormValues = {
   telefono: "",
   email: "",
   logo_path: "",
-  cert_path: "",
 };
 
 // ─── Schema: Serie de Facturación ─────────────────────────────────────────────
 
 export const serieSchema = z.object({
+  nombre: z
+    .string()
+    .trim()
+    .min(1, "El nombre es obligatorio")
+    .max(200, "Máximo 200 caracteres"),
   prefijo: z
     .string()
     .trim()
@@ -68,25 +71,17 @@ export const serieSchema = z.object({
       /^[A-Z0-9\-_]+$/i,
       "Solo letras, números, guiones y guiones bajos"
     ),
-  descripcion: z
-    .string()
-    .trim()
-    .max(200, "Máximo 200 caracteres")
-    .optional()
-    .or(z.literal("")),
   siguiente_numero: z.coerce
     .number({ invalid_type_error: "Debe ser un número" })
     .int("Debe ser un número entero")
     .min(1, "Mínimo 1")
     .max(999_999, "Número demasiado grande"),
-  activa: z.boolean(),
 });
 
 export type SerieFormValues = z.infer<typeof serieSchema>;
 
 export const defaultSerieValues: SerieFormValues = {
+  nombre: "",
   prefijo: "",
-  descripcion: "",
   siguiente_numero: 1,
-  activa: true,
 };

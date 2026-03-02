@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   TrendingUp,
   TrendingDown,
@@ -80,6 +81,7 @@ function IvaRow({ label, value, color, maxVal }: IvaRowProps & { maxVal: number 
 export function DashboardPage() {
   const empresa = useSessionStore(selectEmpresa);
   const empresaId = empresa?.id;
+  const queryClient = useQueryClient();
 
   const { data: statsData = EMPTY_STATS } = useTauriQuery<DashboardStats>(
     ["dashboard_stats", empresaId],
@@ -103,6 +105,22 @@ export function DashboardPage() {
     year: "numeric",
   }).format(new Date());
 
+  // Calcular la próxima fecha límite de liquidación de IVA (modelo 303)
+  // Los plazos son el 20 de abril, julio, octubre y enero del año siguiente
+  const proximaLiquidacion = (() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const deadlines = [
+      new Date(year, 0, 20),   // 20 enero
+      new Date(year, 3, 20),   // 20 abril
+      new Date(year, 6, 20),   // 20 julio
+      new Date(year, 9, 20),   // 20 octubre
+      new Date(year + 1, 0, 20), // 20 enero siguiente año
+    ];
+    const next = deadlines.find((d) => d > now) ?? deadlines[deadlines.length - 1];
+    return next.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" });
+  })();
+
   const ivaLiquidar = stats.iva_repercutido - stats.iva_soportado;
 
   return (
@@ -120,7 +138,14 @@ export function DashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5 text-xs">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 text-xs"
+            onClick={() =>
+              queryClient.invalidateQueries({ queryKey: ["dashboard_stats", empresaId] })
+            }
+          >
             <RefreshCw className="size-3.5" />
             Actualizar
           </Button>
@@ -244,7 +269,7 @@ export function DashboardPage() {
                 )}
               </p>
               <p className="mt-1 text-[11px] text-muted-foreground">
-                Próxima liquidación: 20 abr 2026
+                Próxima liquidación: {proximaLiquidacion}
               </p>
             </div>
 

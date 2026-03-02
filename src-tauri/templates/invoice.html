@@ -65,6 +65,13 @@
         font-size: 11px;
       }
 
+      .invoice-tag .date-due {
+        margin-top: 4px;
+        color: #dc2626;
+        font-size: 11px;
+        font-weight: 600;
+      }
+
       .panel {
         border: 1px solid #e2e8f0;
         border-radius: 10px;
@@ -208,6 +215,54 @@
         font-weight: 700;
       }
 
+      .payment-info {
+        margin-top: 16px;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 12px 14px;
+        display: flex;
+        gap: 32px;
+        background: #f8fafc;
+      }
+
+      .payment-info h3 {
+        margin: 0 0 6px;
+        font-size: 11px;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+      }
+
+      .payment-info .value {
+        font-size: 12px;
+        color: #0f172a;
+        font-weight: 600;
+      }
+
+      .notes-block {
+        margin-top: 14px;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 10px 14px;
+        background: #fffbeb;
+        border-color: #fde68a;
+      }
+
+      .notes-block h3 {
+        margin: 0 0 5px;
+        font-size: 11px;
+        color: #92400e;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+      }
+
+      .notes-block p {
+        margin: 0;
+        font-size: 11px;
+        color: #78350f;
+        white-space: pre-wrap;
+      }
+
       .hash {
         font-family: Consolas, Menlo, monospace;
         font-size: 10px;
@@ -233,6 +288,9 @@
         <div class="invoice-tag">
           <div class="number">{{ invoice.invoice_code }}</div>
           <div class="date">Fecha emisión: {{ invoice.issue_date }}</div>
+          {% if invoice.due_date and invoice.due_date != "" %}
+          <div class="date-due">❌ Vencimiento: {{ invoice.due_date }}</div>
+          {% endif %}
         </div>
       </div>
 
@@ -242,6 +300,12 @@
           <div class="name">{{ invoice.company_name }}</div>
           <div class="line">NIF: {{ invoice.company_nif }}</div>
           <div class="line">{{ invoice.company_address }}</div>
+          {% if invoice.company_postal_city and invoice.company_postal_city != "" %}
+          <div class="line">{{ invoice.company_postal_city }}</div>
+          {% endif %}
+          {% if invoice.company_province and invoice.company_province != "" %}
+          <div class="line">{{ invoice.company_province }}</div>
+          {% endif %}
         </div>
 
         <div class="panel">
@@ -249,6 +313,12 @@
           <div class="name">{{ invoice.client_name }}</div>
           <div class="line">NIF: {{ invoice.client_nif }}</div>
           <div class="line">{{ invoice.client_address }}</div>
+          {% if invoice.client_postal_city and invoice.client_postal_city != "" %}
+          <div class="line">{{ invoice.client_postal_city }}</div>
+          {% endif %}
+          {% if invoice.client_province and invoice.client_province != "" %}
+          <div class="line">{{ invoice.client_province }}</div>
+          {% endif %}
           <div class="line">{{ invoice.client_email }}</div>
         </div>
       </div>
@@ -300,6 +370,30 @@
           <td class="value">{{ invoice.total }}</td>
         </tr>
       </table>
+
+      {% if invoice.payment_method and invoice.payment_method != "" or invoice.bank_account and invoice.bank_account != "" %}
+      <div class="payment-info">
+        {% if invoice.payment_method and invoice.payment_method != "" %}
+        <div>
+          <h3>Forma de pago</h3>
+          <div class="value">{{ invoice.payment_method }}</div>
+        </div>
+        {% endif %}
+        {% if invoice.bank_account and invoice.bank_account != "" %}
+        <div>
+          <h3>IBAN / Cuenta bancaria</h3>
+          <div class="value">{{ invoice.bank_account }}</div>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {% if invoice.notes and invoice.notes != "" %}
+      <div class="notes-block">
+        <h3>Observaciones</h3>
+        <p>{{ invoice.notes }}</p>
+      </div>
+      {% endif %}
 
       <div class="audit">
         <div class="audit-hashes">

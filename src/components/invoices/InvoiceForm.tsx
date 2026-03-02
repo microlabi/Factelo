@@ -25,10 +25,12 @@ import {
   ShieldCheck,
   PenLine,
   UserRound,
+  CreditCard,
+  Banknote,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import type { ClienteRow, SerieRow } from "@/lib/api";
+import type { ClienteRow, SerieRow, ProductoRow } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
 
 import {
@@ -36,6 +38,7 @@ import {
   defaultInvoiceLine,
   defaultInvoiceFormValues,
   TIPOS_RECTIFICATIVA,
+  METODOS_PAGO,
   type InvoiceFormValues,
 } from "@/lib/schemas/invoiceSchema";
 import { calcLine, useInvoiceTotals } from "@/hooks/useInvoiceTotals";
@@ -105,6 +108,11 @@ interface InsertFacturaInput {
   serie_factura_rectificada?: string;
   cesionario_nif?: string;
   cesionario_nombre?: string;
+  // Condiciones de pago y observaciones
+  notas?: string;
+  fecha_vencimiento?: string;
+  metodo_pago?: string;
+  cuenta_bancaria?: string;
 }
 
 function eurosToCents(value: number): number {
@@ -337,7 +345,7 @@ function TotalsPanel({
           disabled={isSubmitting}
           onClick={onSaveAndGenerate}
         >
-          {phase.type === "generando_xml" || phase.type === "guardando" && isSubmitting ? (
+          {isSubmitting ? (
             <Loader2 className="size-4 animate-spin" />
           ) : esEntidadPublica ? (
             <FileCode2 className="size-4" />
@@ -369,10 +377,11 @@ function LinesTableHeader({ esAutonomo }: { esAutonomo: boolean }) {
       className={cn(
         "grid gap-2 px-1 pb-1",
         esAutonomo
-          ? "grid-cols-[20px_1fr_80px_100px_110px_110px_100px_36px]"
-          : "grid-cols-[20px_1fr_80px_100px_110px_100px_36px]"
+          ? "grid-cols-[20px_36px_1fr_80px_100px_110px_110px_100px_36px]"
+          : "grid-cols-[20px_36px_1fr_80px_100px_110px_100px_36px]"
       )}
     >
+      <div />
       <div />
       <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         Descripción
@@ -424,6 +433,12 @@ export function InvoiceForm() {
   const { data: series = [] } = useTauriQuery<SerieRow[]>(
     ["series", empresa?.id],
     "obtener_series",
+    empresa ? { empresaId: empresa.id } : undefined,
+    { enabled: !!empresa }
+  );
+  const { data: productos = [] } = useTauriQuery<ProductoRow[]>(
+    ["productos", empresa?.id],
+    "obtener_productos",
     empresa ? { empresaId: empresa.id } : undefined,
     { enabled: !!empresa }
   );
@@ -527,6 +542,11 @@ export function InvoiceForm() {
       serie_factura_rectificada: data.serie_factura_rectificada || undefined,
       cesionario_nif: data.cesionario_nif || undefined,
       cesionario_nombre: data.cesionario_nombre || undefined,
+      // Condiciones de pago y observaciones
+      notas: data.notas || undefined,
+      fecha_vencimiento: data.fecha_vencimiento || undefined,
+      metodo_pago: data.metodo_pago || undefined,
+      cuenta_bancaria: data.cuenta_bancaria || undefined,
     };
 
     let insertResponse: InsertFacturaResponse;
@@ -1104,6 +1124,7 @@ export function InvoiceForm() {
                     canDelete={fields.length > 1}
                     onDelete={() => remove(index)}
                     esAutonomo={esAutonomo}
+                    productos={productos}
                   />
                 ))}
               </div>
@@ -1124,7 +1145,95 @@ export function InvoiceForm() {
             </CardContent>
           </Card>
 
-          {/* Card 3: Notas */}
+          {/* Card 3: Condiciones de Pago */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10">
+                  <CreditCard className="size-3.5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-sm font-semibold">
+                    Condiciones de pago{" "}
+                    <Badge variant="secondary" className="ml-1 text-[10px]">
+                      Opcional
+                    </Badge>
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Datos que aparecerán en el pie del PDF
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {/* Fecha de vencimiento */}
+              <FormField
+                label="Fecha de vencimiento"
+                htmlFor="fecha_vencimiento"
+                error={errors.fecha_vencimiento?.message}
+              >
+                <Input
+                  id="fecha_vencimiento"
+                  type="date"
+                  {...register("fecha_vencimiento")}
+                  className="text-sm"
+                />
+              </FormField>
+
+              {/* Método de pago */}
+              <FormField
+                label="Método de pago"
+                htmlFor="metodo_pago"
+                error={errors.metodo_pago?.message}
+              >
+                <Controller
+                  control={control}
+                  name="metodo_pago"
+                  render={({ field }) => (
+                    <Select
+                      value={field.value ?? ""}
+                      onValueChange={(v) => field.onChange(v === "__none__" ? "" : v)}
+                    >
+                      <SelectTrigger id="metodo_pago" className="text-sm">
+                        <SelectValue placeholder="Selecciona método…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">
+                          <span className="text-muted-foreground">Sin especificar</span>
+                        </SelectItem>
+                        {METODOS_PAGO.map((m) => (
+                          <SelectItem key={m.value} value={m.value}>
+                            {m.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              </FormField>
+
+              {/* IBAN / Cuenta bancaria */}
+              <FormField
+                label="IBAN / Cuenta bancaria"
+                htmlFor="cuenta_bancaria"
+                error={errors.cuenta_bancaria?.message}
+                className="sm:col-span-2"
+              >
+                <div className="relative">
+                  <Banknote className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="cuenta_bancaria"
+                    {...register("cuenta_bancaria")}
+                    placeholder="ES00 0000 0000 0000 0000 0000"
+                    maxLength={34}
+                    className="pl-8 text-sm font-mono uppercase"
+                  />
+                </div>
+              </FormField>
+            </CardContent>
+          </Card>
+
+          {/* Card 4: Notas */}
           <Card>
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
@@ -1148,7 +1257,7 @@ export function InvoiceForm() {
                 <Textarea
                   id="notas"
                   {...register("notas")}
-                  placeholder="Condiciones de pago, datos bancarios, agradecimientos…"
+                  placeholder="Observaciones adicionales, agradecimientos, condiciones especiales…"
                   className="min-h-[90px] text-sm"
                 />
               </FormField>

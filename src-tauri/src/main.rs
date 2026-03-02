@@ -27,12 +27,17 @@ fn main() {
             commands::crear_serie,
             commands::obtener_clientes,
             commands::crear_cliente,
+            commands::update_cliente,
+            commands::delete_cliente,
             commands::obtener_productos,
             commands::crear_producto,
             commands::obtener_dashboard_stats,
             commands::listar_facturas,
             commands::obtener_factura_detalle,
+            commands::get_advanced_analytics,
+            commands::get_advanced_statistics,
             pdf::generate_pdf,
+            pdf::generate_advanced_stats_pdf,
             pdf::abrir_archivo,
             // ── Registro Inalterable (Veri*factu / Camino 2) ─────────────
             audit::verificar_integridad_bd,
@@ -111,7 +116,25 @@ fn main() {
                             let _ = std::fs::copy(&src, &dst);
                         }
                     }
-                    tracing::info!("Migración completada. La ruta antigua puede eliminarse manualmente.");
+                    tracing::info!("Migración completada. Renombrando la DB antigua para que el cifrado quede activo.");
+                    // Renombrar (no eliminar) la DB antigua para que en el
+                    // próximo arranque cipher_key sea provisionada correctamente.
+                    // Se mantiene como .bak por si el usuario necesita recuperarla.
+                    let legacy_bak = legacy_db_path.with_extension("db.bak");
+                    if let Err(e) = std::fs::rename(&legacy_db_path, &legacy_bak) {
+                        tracing::warn!(
+                            "No se pudo renombrar la DB antigua ({e}). \
+                             La base de datos seguirá funcionando sin cifrado hasta que \
+                             se elimine manualmente {:?}.",
+                            legacy_db_path
+                        );
+                    } else {
+                        tracing::info!(
+                            "DB antigua renombrada a {:?}. En el siguiente arranque \
+                             se activará el cifrado SQLCipher.",
+                            legacy_bak
+                        );
+                    }
                 }
             }
 

@@ -44,7 +44,14 @@ const ROUTE_TITLES: Record<string, { title: string; description: string }> = {
 
 export function AppLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+  // Inicializar el modo oscuro desde localStorage
+  const [darkMode, setDarkMode] = useState(() => {
+    const stored = localStorage.getItem("factelo-dark-mode");
+    const isDark = stored === "true";
+    // Aplicar al DOM de inmediato para evitar flash
+    document.documentElement.classList.toggle("dark", isDark);
+    return isDark;
+  });
   const { pathname } = useLocation();
   const onboarding = useOnboarding();
 
@@ -74,6 +81,7 @@ export function AppLayout() {
     setDarkMode((prev) => {
       const next = !prev;
       document.documentElement.classList.toggle("dark", next);
+      localStorage.setItem("factelo-dark-mode", String(next));
       return next;
     });
   };

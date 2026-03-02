@@ -1,7 +1,7 @@
 use std::{fs, path::PathBuf};
 
 use headless_chrome::{types::PrintToPdfOptions, Browser, LaunchOptionsBuilder};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use tauri::{path::BaseDirectory, Manager};
 use tera::{Context, Tera};
@@ -31,10 +31,21 @@ struct InvoiceRow {
     empresa_nombre: String,
     empresa_nif: String,
     empresa_direccion: String,
+    empresa_codigo_postal: Option<String>,
+    empresa_poblacion: Option<String>,
+    empresa_provincia: Option<String>,
     cliente_nombre: String,
     cliente_nif: Option<String>,
     cliente_direccion: Option<String>,
+    cliente_codigo_postal: Option<String>,
+    cliente_poblacion: Option<String>,
+    cliente_provincia: Option<String>,
     cliente_email: Option<String>,
+    // Condiciones de pago y observaciones
+    notas: Option<String>,
+    fecha_vencimiento: Option<String>,
+    metodo_pago: Option<String>,
+    cuenta_bancaria: Option<String>,
 }
 
 #[derive(Debug, FromRow)]
@@ -58,12 +69,17 @@ struct InvoiceTemplateData {
     generated_at: String,
     invoice_code: String,
     issue_date: String,
+    due_date: String,
     company_name: String,
     company_nif: String,
     company_address: String,
+    company_postal_city: String,
+    company_province: String,
     client_name: String,
     client_nif: String,
     client_address: String,
+    client_postal_city: String,
+    client_province: String,
     client_email: String,
     status: String,
     subtotal: String,
@@ -77,6 +93,12 @@ struct InvoiceTemplateData {
     qr_svg_data_url: String,
     /// URL completa del QR de notariado AEAT
     qr_url: String,
+    /// Método de pago (etiqueta legible)
+    payment_method: String,
+    /// IBAN / cuenta bancaria
+    bank_account: String,
+    /// Observaciones / notas del pie
+    notes: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -175,10 +197,20 @@ async fn fetch_invoice(db: &DbPool, factura_id: i64) -> AppResult<InvoiceRow> {
             e.nombre AS empresa_nombre,
             e.nif AS empresa_nif,
             e.direccion AS empresa_direccion,
+            e.codigo_postal AS empresa_codigo_postal,
+            e.poblacion AS empresa_poblacion,
+            e.provincia AS empresa_provincia,
             c.nombre AS cliente_nombre,
             c.nif AS cliente_nif,
             c.direccion AS cliente_direccion,
-            c.email AS cliente_email
+            c.codigo_postal AS cliente_codigo_postal,
+            c.poblacion AS cliente_poblacion,
+            c.provincia AS cliente_provincia,
+            c.email AS cliente_email,
+            f.notas,
+            f.fecha_vencimiento,
+            f.metodo_pago,
+            f.cuenta_bancaria
         FROM facturas f
         INNER JOIN empresas e ON e.id = f.empresa_id
         INNER JOIN clientes c ON c.id = f.cliente_id
@@ -268,15 +300,26 @@ fn render_invoice_html(
         generated_at: current_timestamp_string(),
         invoice_code: format!("{}-{:04}", invoice.serie_prefijo, invoice.numero),
         issue_date: invoice.fecha_emision.clone(),
+        due_date: invoice.fecha_vencimiento.clone().unwrap_or_default(),
         company_name: invoice.empresa_nombre.clone(),
         company_nif: invoice.empresa_nif.clone(),
         company_address: invoice.empresa_direccion.clone(),
+        company_postal_city: format_postal_city(
+            invoice.empresa_codigo_postal.as_deref(),
+            invoice.empresa_poblacion.as_deref(),
+        ),
+        company_province: invoice.empresa_provincia.clone().unwrap_or_default(),
         client_name: invoice.cliente_nombre.clone(),
         client_nif: invoice.cliente_nif.clone().unwrap_or_else(|| "-".to_string()),
         client_address: invoice
             .cliente_direccion
             .clone()
             .unwrap_or_else(|| "-".to_string()),
+        client_postal_city: format_postal_city(
+            invoice.cliente_codigo_postal.as_deref(),
+            invoice.cliente_poblacion.as_deref(),
+        ),
+        client_province: invoice.cliente_provincia.clone().unwrap_or_default(),
         client_email: invoice
             .cliente_email
             .clone()
@@ -294,6 +337,9 @@ fn render_invoice_html(
         items,
         qr_svg_data_url: qr_svg_data_url.to_string(),
         qr_url: qr_url.to_string(),
+        payment_method: label_for_metodo_pago(invoice.metodo_pago.as_deref()),
+        bank_account: invoice.cuenta_bancaria.clone().unwrap_or_default(),
+        notes: invoice.notas.clone().unwrap_or_default(),
     };
 
     let mut context = Context::new();
@@ -472,6 +518,28 @@ fn find_system_browser() -> Option<std::path::PathBuf> {
     }
 }
 
+/// Formatea CP + población en una sola cadena (p.ej. "28001 Madrid").
+fn format_postal_city(cp: Option<&str>, poblacion: Option<&str>) -> String {
+    match (cp, poblacion) {
+        (Some(cp), Some(p)) if !cp.is_empty() && !p.is_empty() => format!("{cp} {p}"),
+        (None, Some(p)) | (Some(_), Some(p)) => p.to_string(),
+        (Some(cp), None) => cp.to_string(),
+        _ => String::new(),
+    }
+}
+
+/// Devuelve la etiqueta legible de un método de pago.
+fn label_for_metodo_pago(value: Option<&str>) -> String {
+    match value {
+        Some("transferencia") => "Transferencia bancaria".to_string(),
+        Some("efectivo") => "Efectivo".to_string(),
+        Some("tarjeta") => "Tarjeta".to_string(),
+        Some("recibo_domiciliado") => "Recibo domiciliado".to_string(),
+        Some(other) if !other.is_empty() => other.to_string(),
+        _ => String::new(),
+    }
+}
+
 fn format_currency(cents: i64) -> String {
     let value = cents as f64 / 100.0;
     let normalized = format!("{value:.2}");
@@ -485,6 +553,273 @@ fn format_decimal(value: f64) -> String {
 fn format_percentage(value: f64) -> String {
     format!("{value:.2}").replace('.', ",") + "%"
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Informe Ejecutivo PDF — Estadísticas Avanzadas
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ADVANCED_STATS_TEMPLATE: &str =
+    include_str!("../templates/advanced_stats_report.html");
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct AbcClientePdf {
+    pub cliente_nombre: String,
+    pub total_facturado: i64,
+    pub porcentaje_sobre_total: f64,
+    pub porcentaje_acumulado: f64,
+    pub clase_abc: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct DsoClientePdf {
+    pub cliente_nombre: String,
+    pub total_facturado: i64,
+    pub retraso_medio_dias: f64,
+    pub riesgo: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct HeatmapCeldaPdf {
+    pub anio_mes: String,
+    pub concepto: String,
+    pub total_facturado: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AdvancedStatsPdfInput {
+    pub empresa_id: i64,
+    pub empresa_nombre: String,
+    pub abc: Vec<AbcClientePdf>,
+    pub dso: Vec<DsoClientePdf>,
+    pub heatmap: Vec<HeatmapCeldaPdf>,
+}
+
+// ── Template data structs (Tera) ──────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+struct AbcRowTpl {
+    cliente_nombre: String,
+    total_facturado_fmt: String,
+    porcentaje_sobre_total: f64,
+    porcentaje_acumulado: f64,
+    clase_abc: String,
+    bar_pct: f64,
+}
+
+#[derive(Debug, Serialize)]
+struct DsoRowTpl {
+    cliente_nombre: String,
+    total_facturado_fmt: String,
+    retraso_medio_dias: f64,
+    riesgo: String,
+}
+
+#[derive(Debug, Serialize)]
+struct HeatmapCeldaTpl {
+    nivel: u8,
+    valor: i64,
+    valor_fmt: String,
+}
+
+#[derive(Debug, Serialize)]
+struct HeatmapFilaTpl {
+    concepto: String,
+    celdas: Vec<HeatmapCeldaTpl>,
+}
+
+#[tauri::command]
+pub async fn generate_advanced_stats_pdf(
+    app: tauri::AppHandle,
+    input: AdvancedStatsPdfInput,
+) -> CommandResult<String> {
+    generate_advanced_stats_pdf_internal(app, input)
+        .await
+        .map_err(ApiError::from)
+}
+
+async fn generate_advanced_stats_pdf_internal(
+    app: tauri::AppHandle,
+    input: AdvancedStatsPdfInput,
+) -> AppResult<String> {
+    let html = render_advanced_stats_html(&input)?;
+
+    let output_dir = app
+        .path()
+        .resolve("Factelo/informes", BaseDirectory::Document)
+        .map_err(|e| {
+            AppError::Internal(format!(
+                "No se pudo resolver el directorio de documentos: {e}"
+            ))
+        })?;
+    fs::create_dir_all(&output_dir)?;
+
+    let ts = current_timestamp_filename_segment();
+    let file_name = format!("informe_estadistico_{ts}.pdf");
+    let output_path = output_dir.join(file_name);
+    let output_path_for_job = output_path.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        render_html_to_pdf(&html, &output_path_for_job)
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("Error en tarea de generación PDF: {e}")))??;
+
+    Ok(output_path.to_string_lossy().to_string())
+}
+
+fn render_advanced_stats_html(input: &AdvancedStatsPdfInput) -> AppResult<String> {
+    use std::collections::HashMap;
+
+    // ── Fecha legible ────────────────────────────────────────────────────────
+    let generated_at = {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        // fecha aproximada sin chrono dependencia extra
+        format_unix_timestamp_approx(secs)
+    };
+
+    // ── KPIs ─────────────────────────────────────────────────────────────────
+    let total_clientes = input.abc.len();
+    let clientes_a = input.abc.iter().filter(|r| r.clase_abc == "A").count();
+    let clientes_alto_riesgo = input.dso.iter().filter(|r| r.riesgo == "Alto").count();
+
+    // ── ABC rows ─────────────────────────────────────────────────────────────
+    let max_abc = input.abc.iter().map(|r| r.total_facturado).max().unwrap_or(1).max(1);
+    let abc_tpl: Vec<AbcRowTpl> = input
+        .abc
+        .iter()
+        .map(|r| AbcRowTpl {
+            cliente_nombre: r.cliente_nombre.clone(),
+            total_facturado_fmt: format_currency(r.total_facturado),
+            porcentaje_sobre_total: r.porcentaje_sobre_total,
+            porcentaje_acumulado: r.porcentaje_acumulado,
+            clase_abc: r.clase_abc.clone(),
+            bar_pct: (r.total_facturado as f64 / max_abc as f64 * 100.0).min(100.0),
+        })
+        .collect();
+
+    // ── DSO rows ─────────────────────────────────────────────────────────────
+    let dso_tpl: Vec<DsoRowTpl> = input
+        .dso
+        .iter()
+        .map(|r| DsoRowTpl {
+            cliente_nombre: r.cliente_nombre.clone(),
+            total_facturado_fmt: format_currency(r.total_facturado),
+            retraso_medio_dias: r.retraso_medio_dias,
+            riesgo: r.riesgo.clone(),
+        })
+        .collect();
+
+    // ── Heatmap filas + meses ────────────────────────────────────────────────
+    // Obtener lista ordenada de meses y conceptos únicos
+    let mut meses_set: Vec<String> = input
+        .heatmap
+        .iter()
+        .map(|r| r.anio_mes.clone())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    meses_set.sort();
+
+    let conceptos: Vec<String> = {
+        let mut seen = std::collections::BTreeSet::new();
+        input
+            .heatmap
+            .iter()
+            .filter(|r| seen.insert(r.concepto.clone()))
+            .map(|r| r.concepto.clone())
+            .collect()
+    };
+
+    // Construir lookup: (concepto, mes) → total
+    let mut lookup: HashMap<(String, String), i64> = HashMap::new();
+    for r in &input.heatmap {
+        lookup.insert((r.concepto.clone(), r.anio_mes.clone()), r.total_facturado);
+    }
+
+    // Máx global para normalizar intensidad
+    let max_heat = input
+        .heatmap
+        .iter()
+        .map(|r| r.total_facturado)
+        .max()
+        .unwrap_or(1)
+        .max(1) as f64;
+
+    let heatmap_filas: Vec<HeatmapFilaTpl> = conceptos
+        .iter()
+        .map(|concepto| {
+            let celdas = meses_set
+                .iter()
+                .map(|mes| {
+                    let valor = *lookup
+                        .get(&(concepto.clone(), mes.clone()))
+                        .unwrap_or(&0);
+                    let nivel = if valor == 0 {
+                        0
+                    } else {
+                        let pct = valor as f64 / max_heat;
+                        if pct < 0.20 { 1 } else if pct < 0.40 { 2 } else if pct < 0.60 { 3 } else if pct < 0.80 { 4 } else { 5 }
+                    };
+                    HeatmapCeldaTpl {
+                        nivel,
+                        valor,
+                        valor_fmt: if valor > 0 { format_currency(valor) } else { String::new() },
+                    }
+                })
+                .collect();
+            HeatmapFilaTpl {
+                concepto: concepto.clone(),
+                celdas,
+            }
+        })
+        .collect();
+
+    let total_meses = meses_set.len();
+
+    // ── Renderizar Tera ───────────────────────────────────────────────────────
+    let mut ctx = Context::new();
+    ctx.insert("empresa_nombre", &input.empresa_nombre);
+    ctx.insert("generated_at", &generated_at);
+    ctx.insert("total_clientes", &total_clientes);
+    ctx.insert("clientes_a", &clientes_a);
+    ctx.insert("clientes_alto_riesgo", &clientes_alto_riesgo);
+    ctx.insert("total_meses", &total_meses);
+    ctx.insert("abc", &abc_tpl);
+    ctx.insert("dso", &dso_tpl);
+    ctx.insert("meses", &meses_set);
+    ctx.insert("heatmap_filas", &heatmap_filas);
+
+    Tera::one_off(ADVANCED_STATS_TEMPLATE, &ctx, false).map_err(|e| {
+        AppError::Internal(format!(
+            "Error al renderizar plantilla de estadísticas: {e}"
+        ))
+    })
+}
+
+/// Formatea un Unix timestamp en una cadena de fecha/hora aproximada (sin chrono).
+fn format_unix_timestamp_approx(secs: u64) -> String {
+    // Aproximación simple: días desde epoch
+    let days_since_epoch = secs / 86400;
+    // Algoritmo civil de Richards para fecha gregoriana
+    let z = days_since_epoch + 719468;
+    let era = z / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    let hour = (secs % 86400) / 3600;
+    let min = (secs % 3600) / 60;
+    format!("{:02}/{:02}/{:04} {:02}:{:02}", d, m, y, hour, min)
+}
+
 
 fn current_timestamp_string() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};

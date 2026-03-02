@@ -54,6 +54,17 @@ export type InvoiceLineValues = z.infer<typeof invoiceLineSchema>;
 // ─── Schema principal de la factura ──────────────────────────────────────────
 
 // Tipos de factura rectificativa según Order HAP/1650/2015 Anexo II
+// ─── Métodos de pago ────────────────────────────────────────────────────────
+
+export const METODOS_PAGO = [
+  { label: "Transferencia bancaria", value: "transferencia" },
+  { label: "Efectivo", value: "efectivo" },
+  { label: "Tarjeta", value: "tarjeta" },
+  { label: "Recibo domiciliado", value: "recibo_domiciliado" },
+] as const;
+
+export type MetodoPago = (typeof METODOS_PAGO)[number]["value"];
+
 export const TIPOS_RECTIFICATIVA = [
   { label: "01 – Sustitución (anula y reemplaza)", value: "01" },
   { label: "02 – Anulación pura", value: "02" },
@@ -93,6 +104,31 @@ export const invoiceFormSchema = z.object({
       "La fecha de emisión no puede ser posterior a hoy"
     ),
   notas: z.string().max(1000, "Máximo 1000 caracteres").optional(),
+
+  // ─── Condiciones de pago ─────────────────────────────────────────────────
+  fecha_vencimiento: z
+    .string()
+    .optional()
+    .refine(
+      (d) => !d || !isNaN(Date.parse(d)),
+      "Formato de fecha no válido"
+    )
+    .or(z.literal("")),
+  metodo_pago: z
+    .string()
+    .optional()
+    .refine(
+      (v) => !v || METODOS_PAGO.map((m) => m.value).includes(v as MetodoPago),
+      "Método de pago no válido"
+    )
+    .or(z.literal("")),
+  cuenta_bancaria: z
+    .string()
+    .trim()
+    .max(34, "Máximo 34 caracteres (IBAN)")
+    .optional()
+    .or(z.literal("")),
+
   lineas: z
     .array(invoiceLineSchema)
     .min(1, "La factura debe tener al menos una línea"),
@@ -196,6 +232,9 @@ export const defaultInvoiceFormValues: InvoiceFormValues = {
   numero: 1,
   fecha_emision: new Date().toISOString().split("T")[0],
   notas: "",
+  fecha_vencimiento: "",
+  metodo_pago: "",
+  cuenta_bancaria: "",
   lineas: [{ ...defaultInvoiceLine }],
   es_entidad_publica: false,
   dir3_oficina_contable: "",

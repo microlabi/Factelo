@@ -40,7 +40,6 @@ export interface Empresa {
   nif: string;
   direccion: string;
   logo: string | null;
-  cert_path: string | null;
 }
 
 export interface ProductoServicio {

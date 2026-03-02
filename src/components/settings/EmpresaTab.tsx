@@ -7,10 +7,8 @@ import { toast } from "sonner";
 import {
   Building2,
   Upload,
-  ShieldCheck,
   Loader2,
   ImageIcon,
-  FileKey2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -87,7 +85,6 @@ export function EmpresaTab({ initialData }: EmpresaTabProps) {
   });
 
   const logoPath = watch("logo_path");
-  const certPath = watch("cert_path");
 
   // ── Selector de logo ──────────────────────────────────────────────────────
   async function handleSelectLogo() {
@@ -101,28 +98,6 @@ export function EmpresaTab({ initialData }: EmpresaTabProps) {
       });
       if (typeof selected === "string") {
         setValue("logo_path", selected, { shouldDirty: true });
-      }
-    } catch {
-      toast.error("No se pudo abrir el selector de archivos");
-    }
-  }
-
-  // ── Selector de certificado ───────────────────────────────────────────────
-  async function handleSelectCert() {
-    try {
-      const selected = await open({
-        title: "Seleccionar certificado digital",
-        filters: [
-          {
-            name: "Certificado digital (.p12 / .pfx)",
-            extensions: ["p12", "pfx"],
-          },
-        ],
-        multiple: false,
-      });
-      if (typeof selected === "string") {
-        setValue("cert_path", selected, { shouldDirty: true });
-        toast.info("Certificado seleccionado. Los datos se guardarán al pulsar 'Guardar cambios'.");
       }
     } catch {
       toast.error("No se pudo abrir el selector de archivos");
@@ -283,62 +258,6 @@ export function EmpresaTab({ initialData }: EmpresaTabProps) {
               La ruta se guarda localmente — no se sube a ningún servidor.
             </p>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* ── Certificado digital ──────────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ShieldCheck className="h-4 w-4 text-primary" />
-            Certificado digital para FACe
-          </CardTitle>
-          <CardDescription>
-            Certificado <strong>.p12</strong> o <strong>.pfx</strong> necesario para firmar
-            facturas en formato Facturae y enviarlas a la Administración Pública a través de FACe.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div
-            className={cn(
-              "flex items-center gap-3 rounded-lg border p-3",
-              certPath
-                ? "border-green-500/50 bg-green-50/50 dark:bg-green-950/20"
-                : "border-dashed"
-            )}
-          >
-            <FileKey2
-              className={cn(
-                "h-8 w-8 shrink-0",
-                certPath ? "text-green-600" : "text-muted-foreground"
-              )}
-            />
-            <div className="min-w-0 flex-1">
-              {certPath ? (
-                <>
-                  <p className="truncate text-sm font-medium">{basename(certPath)}</p>
-                  <p className="truncate text-xs text-muted-foreground">{certPath}</p>
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Ningún certificado seleccionado
-                </p>
-              )}
-            </div>
-            <Button
-              type="button"
-              variant={certPath ? "outline" : "default"}
-              size="sm"
-              onClick={handleSelectCert}
-            >
-              {certPath ? "Cambiar" : "Seleccionar"}
-            </Button>
-          </div>
-
-          <p className="text-xs text-muted-foreground">
-            ⚠️ El archivo de certificado permanece en tu equipo. Factelo solo guarda la ruta
-            de acceso y nunca transmite el archivo.
-          </p>
         </CardContent>
       </Card>
 

@@ -41,7 +41,6 @@ export interface EmpresaRow {
   nombre: string;
   nif: string;
   direccion: string;
-  cert_path: string | null;
 }
 
 export interface CrearEmpresaInput {
@@ -68,27 +67,64 @@ export interface CrearSerieInput {
 
 // ─── Clientes ────────────────────────────────────────────────────────────────
 
+export type TipoEntidad = "Empresa" | "Autónomo" | "Entidad_Publica";
+
 export interface ClienteRow {
   id: number;
   empresa_id: number;
+  /** Razón social / nombre completo */
   nombre: string;
+  /** NIF / CIF / NIE / VAT-ID */
   nif: string | null;
+  nombre_comercial: string | null;
+  tipo_entidad: TipoEntidad;
   email: string | null;
   telefono: string | null;
+  persona_contacto: string | null;
   direccion: string | null;
   codigo_postal: string | null;
+  /** Ciudad / municipio */
   poblacion: string | null;
   provincia: string | null;
   pais: string;
+  aplica_irpf: number;
+  aplica_recargo_eq: number;
+  operacion_intracomunitaria: number;
+  metodo_pago_defecto: string | null;
+  dias_vencimiento: number;
+  iban_cuenta: string | null;
+  dir3_oficina_contable: string | null;
+  dir3_organo_gestor: string | null;
+  dir3_unidad_tramitadora: string | null;
 }
 
 export interface CrearClienteInput {
   empresa_id: number;
   nombre: string;
   nif?: string;
+  nombre_comercial?: string;
+  tipo_entidad?: TipoEntidad;
   email?: string;
   telefono?: string;
+  persona_contacto?: string;
   direccion?: string;
+  codigo_postal?: string;
+  poblacion?: string;
+  provincia?: string;
+  pais?: string;
+  aplica_irpf?: boolean;
+  aplica_recargo_eq?: boolean;
+  operacion_intracomunitaria?: boolean;
+  metodo_pago_defecto?: string;
+  dias_vencimiento?: number;
+  iban_cuenta?: string;
+  dir3_oficina_contable?: string;
+  dir3_organo_gestor?: string;
+  dir3_unidad_tramitadora?: string;
+}
+
+export interface ActualizarClienteInput extends CrearClienteInput {
+  id: number;
 }
 
 // ─── Productos ───────────────────────────────────────────────────────────────
@@ -156,6 +192,11 @@ export interface InsertFacturaInput {
   serie_factura_rectificada?: string;
   cesionario_nif?: string;
   cesionario_nombre?: string;
+  // Condiciones de pago y observaciones
+  notas?: string;
+  fecha_vencimiento?: string;
+  metodo_pago?: string;
+  cuenta_bancaria?: string;
 }
 
 export interface InsertFacturaResponse {
@@ -198,6 +239,38 @@ export interface QrLegalResponse {
 export interface FicheroInspeccionResponse {
   ruta: string;
   total_eventos: number;
+}
+
+// ── Estadística Avanzada ─────────────────────────────────────────────────────
+export interface AbcClienteRow {
+  cliente_nombre: string;
+  total_facturado: number;
+  porcentaje_sobre_total: number;
+  porcentaje_acumulado: number;
+  clase_abc: "A" | "B" | "C";
+}
+export interface DsoClienteRow {
+  cliente_nombre: string;
+  total_facturado: number;
+  retraso_medio_dias: number;
+  riesgo: "Bajo" | "Medio" | "Alto";
+}
+export interface HeatmapCeldaRow {
+  anio_mes: string;
+  concepto: string;
+  total_facturado: number;
+}
+export interface AdvancedStatisticsResult {
+  abc: AbcClienteRow[];
+  dso: DsoClienteRow[];
+  heatmap: HeatmapCeldaRow[];
+}
+export interface AdvancedStatsPdfInput {
+  empresa_id: number;
+  empresa_nombre: string;
+  abc: AbcClienteRow[];
+  dso: DsoClienteRow[];
+  heatmap: HeatmapCeldaRow[];
 }
 
 export interface LineaDetalle {
@@ -251,6 +324,12 @@ export const api = {
 
   crearCliente: (input: CrearClienteInput): Promise<ClienteRow> =>
     invoke("crear_cliente", { input }),
+
+  actualizarCliente: (input: ActualizarClienteInput): Promise<ClienteRow> =>
+    invoke("update_cliente", { input }),
+
+  eliminarCliente: (id: number, empresaId: number): Promise<void> =>
+    invoke("delete_cliente", { id, empresaId }),
 
   // ── Productos ──────────────────────────────────────────────────────────────
   obtenerProductos: (empresaId: number): Promise<ProductoRow[]> =>
@@ -322,4 +401,16 @@ export const api = {
     anio: number
   ): Promise<FicheroInspeccionResponse> =>
     invoke("generar_fichero_inspeccion", { empresaId, anio }),
+
+  /** Obtiene los 3 bloques de estadística avanzada (ABC, DSO, Heatmap). */
+  getAdvancedStatistics: (
+    empresaId: number
+  ): Promise<AdvancedStatisticsResult> =>
+    invoke("get_advanced_statistics", { empresaId }),
+
+  /** Genera el informe ejecutivo PDF con los datos de estadística avanzada. */
+  generateAdvancedStatsPdf: (
+    input: AdvancedStatsPdfInput
+  ): Promise<string> =>
+    invoke("generate_advanced_stats_pdf", { input }),
 };

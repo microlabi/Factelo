@@ -23,13 +23,13 @@
       }
     ],
     "security": {
-      "csp": null,
+      "csp": "default-src 'self' tauri: asset:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: blob:; connect-src 'self' tauri: ipc:",
       "capabilities": [
         "default"
       ],
       "assetProtocol": {
         "enable": true,
-        "scope": ["**"]
+        "scope": ["$APPDATA/**", "$APPLOCALDATA/**", "$DOCUMENT/**"]
       }
     }
   },

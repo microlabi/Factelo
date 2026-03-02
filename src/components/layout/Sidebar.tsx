@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   TrendingUp,
+  BarChart2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,8 @@ const navMain: NavItem[] = [
   { label: "Facturas", href: "/facturas", icon: FileText },
   { label: "Clientes", href: "/clientes", icon: Users },
   { label: "Productos", href: "/productos", icon: Package },
+  { label: "Analítica", href: "/analytics", icon: TrendingUp },
+  { label: "Estad. Avanzadas", href: "/estadisticas-avanzadas", icon: BarChart2 },
   { label: "Gastos", href: "/gastos", icon: Receipt },
 ];
 

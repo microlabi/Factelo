@@ -49,6 +49,11 @@ pub struct InsertFacturaInput {
     pub serie_factura_rectificada: Option<String>,
     pub cesionario_nif: Option<String>,
     pub cesionario_nombre: Option<String>,
+    // ─── Condiciones de pago y observaciones ────────────────────────────────
+    pub notas: Option<String>,
+    pub fecha_vencimiento: Option<String>,
+    pub metodo_pago: Option<String>,
+    pub cuenta_bancaria: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -164,9 +169,13 @@ async fn insert_factura_internal(
             numero_factura_rectificada,
             serie_factura_rectificada,
             cesionario_nif,
-            cesionario_nombre
+            cesionario_nombre,
+            notas,
+            fecha_vencimiento,
+            metodo_pago,
+            cuenta_bancaria
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)
         "#,
     )
     .bind(input.empresa_id)
@@ -190,6 +199,10 @@ async fn insert_factura_internal(
     .bind(input.serie_factura_rectificada.as_deref())
     .bind(input.cesionario_nif.as_deref())
     .bind(input.cesionario_nombre.as_deref())
+    .bind(input.notas.as_deref())
+    .bind(input.fecha_vencimiento.as_deref())
+    .bind(input.metodo_pago.as_deref())
+    .bind(input.cuenta_bancaria.as_deref())
     .execute(&mut *tx)
     .await
     .map_err(|e| {
@@ -1061,13 +1074,12 @@ pub struct EmpresaRow {
     pub nombre: String,
     pub nif: String,
     pub direccion: String,
-    pub cert_path: Option<String>,
 }
 
 #[tauri::command]
 pub async fn obtener_empresas(state: tauri::State<'_, DbPool>) -> CommandResult<Vec<EmpresaRow>> {
     sqlx::query_as::<_, EmpresaRow>(
-        "SELECT id, nombre, nif, direccion, cert_path FROM empresas ORDER BY id ASC",
+        "SELECT id, nombre, nif, direccion FROM empresas ORDER BY id ASC",
     )
     .fetch_all(state.inner())
     .await
@@ -1123,7 +1135,6 @@ async fn crear_empresa_internal(db: &DbPool, input: CrearEmpresaInput) -> AppRes
         nombre: input.nombre,
         nif: input.nif,
         direccion: input.direccion,
-        cert_path: None,
     })
 }
 
@@ -1204,15 +1215,35 @@ async fn crear_serie_internal(db: &DbPool, input: CrearSerieInput) -> AppResult<
 pub struct ClienteRow {
     pub id: i64,
     pub empresa_id: i64,
+    /// Razón social / nombre completo del cliente
     pub nombre: String,
+    /// NIF / CIF / NIE / VAT-ID
     pub nif: Option<String>,
+    /// Nombre comercial (puede diferir de la razón social)
+    pub nombre_comercial: Option<String>,
+    /// Tipo de entidad: "Empresa" | "Autónomo" | "Entidad_Publica"
+    pub tipo_entidad: String,
     pub email: Option<String>,
     pub telefono: Option<String>,
+    pub persona_contacto: Option<String>,
     pub direccion: Option<String>,
     pub codigo_postal: Option<String>,
     pub poblacion: Option<String>,
     pub provincia: Option<String>,
     pub pais: String,
+    /// 0 / 1
+    pub aplica_irpf: i64,
+    /// 0 / 1
+    pub aplica_recargo_eq: i64,
+    /// 0 / 1
+    pub operacion_intracomunitaria: i64,
+    pub metodo_pago_defecto: Option<String>,
+    pub dias_vencimiento: i64,
+    pub iban_cuenta: Option<String>,
+    // ── Códigos DIR3 (obligatorios si tipo_entidad = "Entidad_Publica") ──
+    pub dir3_oficina_contable: Option<String>,
+    pub dir3_organo_gestor: Option<String>,
+    pub dir3_unidad_tramitadora: Option<String>,
 }
 
 #[tauri::command]
@@ -1221,8 +1252,11 @@ pub async fn obtener_clientes(
     empresa_id: i64,
 ) -> CommandResult<Vec<ClienteRow>> {
     sqlx::query_as::<_, ClienteRow>(
-        "SELECT id, empresa_id, nombre, nif, email, telefono, direccion, \
-         codigo_postal, poblacion, provincia, pais \
+        "SELECT id, empresa_id, nombre, nif, nombre_comercial, tipo_entidad,
+                email, telefono, persona_contacto, direccion, codigo_postal, poblacion,
+                provincia, pais, aplica_irpf, aplica_recargo_eq, operacion_intracomunitaria,
+                metodo_pago_defecto, dias_vencimiento, iban_cuenta,
+                dir3_oficina_contable, dir3_organo_gestor, dir3_unidad_tramitadora
          FROM clientes WHERE empresa_id = ?1 ORDER BY nombre ASC",
     )
     .bind(empresa_id)
@@ -1236,9 +1270,29 @@ pub struct CrearClienteInput {
     pub empresa_id: i64,
     pub nombre: String,
     pub nif: Option<String>,
+    pub nombre_comercial: Option<String>,
+    pub tipo_entidad: Option<String>,
     pub email: Option<String>,
     pub telefono: Option<String>,
+    pub persona_contacto: Option<String>,
     pub direccion: Option<String>,
+    pub codigo_postal: Option<String>,
+    pub poblacion: Option<String>,
+    pub provincia: Option<String>,
+    pub pais: Option<String>,
+    pub aplica_irpf: Option<bool>,
+    pub aplica_recargo_eq: Option<bool>,
+    pub operacion_intracomunitaria: Option<bool>,
+    pub metodo_pago_defecto: Option<String>,
+    pub dias_vencimiento: Option<i64>,
+    pub iban_cuenta: Option<String>,
+    pub dir3_oficina_contable: Option<String>,
+    pub dir3_organo_gestor: Option<String>,
+    pub dir3_unidad_tramitadora: Option<String>,
+}
+
+fn trim_opt(v: Option<String>) -> Option<String> {
+    v.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
 #[tauri::command]
@@ -1252,16 +1306,66 @@ pub async fn crear_cliente(
         )));
     }
 
+    let tipo_entidad = input
+        .tipo_entidad
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .unwrap_or("Empresa")
+        .to_string();
+
+    let pais = input
+        .pais
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .unwrap_or("ES")
+        .to_string();
+
+    let aplica_irpf = input.aplica_irpf.unwrap_or(false) as i64;
+    let aplica_recargo_eq = input.aplica_recargo_eq.unwrap_or(false) as i64;
+    let operacion_intracomunitaria = input.operacion_intracomunitaria.unwrap_or(false) as i64;
+    let dias_vencimiento = input.dias_vencimiento.unwrap_or(30);
+
     let id = sqlx::query(
-        "INSERT INTO clientes (empresa_id, nombre, nif, email, telefono, direccion, pais, created_at, updated_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'ES', datetime('now'), datetime('now'))",
+        "INSERT INTO clientes (
+            empresa_id, nombre, nif, nombre_comercial, tipo_entidad,
+            email, telefono, persona_contacto, direccion, codigo_postal, poblacion,
+            provincia, pais, aplica_irpf, aplica_recargo_eq, operacion_intracomunitaria,
+            metodo_pago_defecto, dias_vencimiento, iban_cuenta,
+            dir3_oficina_contable, dir3_organo_gestor, dir3_unidad_tramitadora,
+            created_at, updated_at
+         ) VALUES (
+            ?1,  ?2,  ?3,  ?4,  ?5,
+            ?6,  ?7,  ?8,  ?9,  ?10, ?11,
+            ?12, ?13, ?14, ?15, ?16,
+            ?17, ?18, ?19,
+            ?20, ?21, ?22,
+            datetime('now'), datetime('now')
+        )",
     )
     .bind(input.empresa_id)
     .bind(input.nombre.trim())
-    .bind(input.nif.as_deref().map(str::trim).filter(|v| !v.is_empty()))
-    .bind(input.email.as_deref().map(str::trim).filter(|v| !v.is_empty()))
-    .bind(input.telefono.as_deref().map(str::trim).filter(|v| !v.is_empty()))
-    .bind(input.direccion.as_deref().map(str::trim).filter(|v| !v.is_empty()))
+    .bind(trim_opt(input.nif.clone()))
+    .bind(trim_opt(input.nombre_comercial.clone()))
+    .bind(&tipo_entidad)
+    .bind(trim_opt(input.email.clone()))
+    .bind(trim_opt(input.telefono.clone()))
+    .bind(trim_opt(input.persona_contacto.clone()))
+    .bind(trim_opt(input.direccion.clone()))
+    .bind(trim_opt(input.codigo_postal.clone()))
+    .bind(trim_opt(input.poblacion.clone()))
+    .bind(trim_opt(input.provincia.clone()))
+    .bind(&pais)
+    .bind(aplica_irpf)
+    .bind(aplica_recargo_eq)
+    .bind(operacion_intracomunitaria)
+    .bind(trim_opt(input.metodo_pago_defecto.clone()))
+    .bind(dias_vencimiento)
+    .bind(trim_opt(input.iban_cuenta.clone()))
+    .bind(trim_opt(input.dir3_oficina_contable.clone()))
+    .bind(trim_opt(input.dir3_organo_gestor.clone()))
+    .bind(trim_opt(input.dir3_unidad_tramitadora.clone()))
     .execute(state.inner())
     .await
     .map_err(|e| ApiError::from(AppError::from(e)))?
@@ -1271,21 +1375,166 @@ pub async fn crear_cliente(
         id,
         empresa_id: input.empresa_id,
         nombre: input.nombre.trim().to_string(),
-        nif: input.nif.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
-        email: input.email.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
-        telefono: input
-            .telefono
-            .map(|v| v.trim().to_string())
-            .filter(|v| !v.is_empty()),
-        direccion: input
-            .direccion
-            .map(|v| v.trim().to_string())
-            .filter(|v| !v.is_empty()),
-        codigo_postal: None,
-        poblacion: None,
-        provincia: None,
-        pais: "ES".to_string(),
+        nif: trim_opt(input.nif),
+        nombre_comercial: trim_opt(input.nombre_comercial),
+        tipo_entidad,
+        email: trim_opt(input.email),
+        telefono: trim_opt(input.telefono),
+        persona_contacto: trim_opt(input.persona_contacto),
+        direccion: trim_opt(input.direccion),
+        codigo_postal: trim_opt(input.codigo_postal),
+        poblacion: trim_opt(input.poblacion),
+        provincia: trim_opt(input.provincia),
+        pais,
+        aplica_irpf,
+        aplica_recargo_eq,
+        operacion_intracomunitaria,
+        metodo_pago_defecto: trim_opt(input.metodo_pago_defecto),
+        dias_vencimiento,
+        iban_cuenta: trim_opt(input.iban_cuenta),
+        dir3_oficina_contable: trim_opt(input.dir3_oficina_contable),
+        dir3_organo_gestor: trim_opt(input.dir3_organo_gestor),
+        dir3_unidad_tramitadora: trim_opt(input.dir3_unidad_tramitadora),
     })
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ActualizarClienteInput {
+    pub id: i64,
+    pub empresa_id: i64,
+    pub nombre: String,
+    pub nif: Option<String>,
+    pub nombre_comercial: Option<String>,
+    pub tipo_entidad: Option<String>,
+    pub email: Option<String>,
+    pub telefono: Option<String>,
+    pub persona_contacto: Option<String>,
+    pub direccion: Option<String>,
+    pub codigo_postal: Option<String>,
+    pub poblacion: Option<String>,
+    pub provincia: Option<String>,
+    pub pais: Option<String>,
+    pub aplica_irpf: Option<bool>,
+    pub aplica_recargo_eq: Option<bool>,
+    pub operacion_intracomunitaria: Option<bool>,
+    pub metodo_pago_defecto: Option<String>,
+    pub dias_vencimiento: Option<i64>,
+    pub iban_cuenta: Option<String>,
+    pub dir3_oficina_contable: Option<String>,
+    pub dir3_organo_gestor: Option<String>,
+    pub dir3_unidad_tramitadora: Option<String>,
+}
+
+#[tauri::command]
+pub async fn update_cliente(
+    state: tauri::State<'_, DbPool>,
+    input: ActualizarClienteInput,
+) -> CommandResult<ClienteRow> {
+    if input.id <= 0 || input.empresa_id <= 0 || input.nombre.trim().is_empty() {
+        return Err(ApiError::from(AppError::Validation(
+            "id, empresa_id válidos y nombre son obligatorios".to_string(),
+        )));
+    }
+
+    let tipo_entidad = input
+        .tipo_entidad
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .unwrap_or("Empresa")
+        .to_string();
+
+    let pais = input
+        .pais
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .unwrap_or("ES")
+        .to_string();
+
+    let aplica_irpf = input.aplica_irpf.unwrap_or(false) as i64;
+    let aplica_recargo_eq = input.aplica_recargo_eq.unwrap_or(false) as i64;
+    let operacion_intracomunitaria = input.operacion_intracomunitaria.unwrap_or(false) as i64;
+    let dias_vencimiento = input.dias_vencimiento.unwrap_or(30);
+
+    sqlx::query(
+        "UPDATE clientes SET
+            nombre = ?1, nif = ?2, nombre_comercial = ?3, tipo_entidad = ?4,
+            email = ?5, telefono = ?6, persona_contacto = ?7, direccion = ?8,
+            codigo_postal = ?9, poblacion = ?10, provincia = ?11, pais = ?12,
+            aplica_irpf = ?13, aplica_recargo_eq = ?14, operacion_intracomunitaria = ?15,
+            metodo_pago_defecto = ?16, dias_vencimiento = ?17, iban_cuenta = ?18,
+            dir3_oficina_contable = ?19, dir3_organo_gestor = ?20, dir3_unidad_tramitadora = ?21,
+            updated_at = datetime('now')
+         WHERE id = ?22 AND empresa_id = ?23",
+    )
+    .bind(input.nombre.trim())
+    .bind(trim_opt(input.nif.clone()))
+    .bind(trim_opt(input.nombre_comercial.clone()))
+    .bind(&tipo_entidad)
+    .bind(trim_opt(input.email.clone()))
+    .bind(trim_opt(input.telefono.clone()))
+    .bind(trim_opt(input.persona_contacto.clone()))
+    .bind(trim_opt(input.direccion.clone()))
+    .bind(trim_opt(input.codigo_postal.clone()))
+    .bind(trim_opt(input.poblacion.clone()))
+    .bind(trim_opt(input.provincia.clone()))
+    .bind(&pais)
+    .bind(aplica_irpf)
+    .bind(aplica_recargo_eq)
+    .bind(operacion_intracomunitaria)
+    .bind(trim_opt(input.metodo_pago_defecto.clone()))
+    .bind(dias_vencimiento)
+    .bind(trim_opt(input.iban_cuenta.clone()))
+    .bind(trim_opt(input.dir3_oficina_contable.clone()))
+    .bind(trim_opt(input.dir3_organo_gestor.clone()))
+    .bind(trim_opt(input.dir3_unidad_tramitadora.clone()))
+    .bind(input.id)
+    .bind(input.empresa_id)
+    .execute(state.inner())
+    .await
+    .map_err(|e| ApiError::from(AppError::from(e)))?;
+
+    Ok(ClienteRow {
+        id: input.id,
+        empresa_id: input.empresa_id,
+        nombre: input.nombre.trim().to_string(),
+        nif: trim_opt(input.nif),
+        nombre_comercial: trim_opt(input.nombre_comercial),
+        tipo_entidad,
+        email: trim_opt(input.email),
+        telefono: trim_opt(input.telefono),
+        persona_contacto: trim_opt(input.persona_contacto),
+        direccion: trim_opt(input.direccion),
+        codigo_postal: trim_opt(input.codigo_postal),
+        poblacion: trim_opt(input.poblacion),
+        provincia: trim_opt(input.provincia),
+        pais,
+        aplica_irpf,
+        aplica_recargo_eq,
+        operacion_intracomunitaria,
+        metodo_pago_defecto: trim_opt(input.metodo_pago_defecto),
+        dias_vencimiento,
+        iban_cuenta: trim_opt(input.iban_cuenta),
+        dir3_oficina_contable: trim_opt(input.dir3_oficina_contable),
+        dir3_organo_gestor: trim_opt(input.dir3_organo_gestor),
+        dir3_unidad_tramitadora: trim_opt(input.dir3_unidad_tramitadora),
+    })
+}
+
+#[tauri::command]
+pub async fn delete_cliente(
+    state: tauri::State<'_, DbPool>,
+    id: i64,
+    empresa_id: i64,
+) -> CommandResult<()> {
+    sqlx::query("DELETE FROM clientes WHERE id = ?1 AND empresa_id = ?2")
+        .bind(id)
+        .bind(empresa_id)
+        .execute(state.inner())
+        .await
+        .map_err(|e| ApiError::from(AppError::from(e)))?;
+    Ok(())
 }
 
 // ─── Productos ────────────────────────────────────────────────────────────────
@@ -1671,5 +1920,383 @@ pub async fn obtener_factura_detalle(
         es_entidad_publica: header.es_entidad_publica,
         lineas,
     })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Motor de Analítica Avanzada
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Parámetros de filtrado opcionales para el analytics.
+#[derive(Debug, Deserialize)]
+pub struct AdvancedAnalyticsParams {
+    /// ID de la empresa sobre la que calcular analítica.
+    pub empresa_id: i64,
+    /// Fecha de inicio en formato ISO-8601 (inclusive), ej. "2026-01-01".
+    pub fecha_inicio: Option<String>,
+    /// Fecha de fin en formato ISO-8601 (inclusive), ej. "2026-03-31".
+    pub fecha_fin: Option<String>,
+    /// Tipo de entidad: "Empresa", "Autónomo" o "Entidad Pública".
+    pub tipo_entidad: Option<String>,
+    /// Texto libre para filtrar por concepto/descripción de línea de factura.
+    pub texto_producto: Option<String>,
+}
+
+/// Resultado que devuelve el motor de analítica.
+#[derive(Debug, Serialize)]
+pub struct AdvancedAnalyticsResult {
+    /// Suma de bases imponibles (subtotales, en céntimos).
+    pub total_base_imponible: i64,
+    /// Suma de totales de factura con IVA incluido (en céntimos).
+    pub total_facturado: i64,
+    /// Número de facturas que cumplen los filtros.
+    pub num_facturas: i64,
+    /// Número de líneas de factura que cumplen los filtros.
+    pub num_lineas: i64,
+}
+
+#[tauri::command]
+pub async fn get_advanced_analytics(
+    state: tauri::State<'_, DbPool>,
+    params: AdvancedAnalyticsParams,
+) -> CommandResult<AdvancedAnalyticsResult> {
+    get_advanced_analytics_internal(state.inner(), params)
+        .await
+        .map_err(ApiError::from)
+}
+
+async fn get_advanced_analytics_internal(
+    db: &DbPool,
+    params: AdvancedAnalyticsParams,
+) -> AppResult<AdvancedAnalyticsResult> {
+    // ── Construir query dinámica con filtros opcionales ───────────────────────
+    //
+    //  JOIN: facturas_cabecera → contactos (cliente) → facturas_lineas (líneas)
+    //
+    //  Para evitar inyección SQL los valores se pasan como bind parameters (?N).
+    //  Solo el número de cláusulas WHERE cambia en función de los filtros
+    //  proporcionados; los placeholders son estáticos por posición.
+    //
+    //  Índice de parámetros:
+    //    ?1  → empresa_id       (siempre presente)
+    //    ?2  → fecha_inicio     (si Some)
+    //    ?3  → fecha_fin        (si Some)
+    //    ?4  → tipo_entidad     (si Some y no vacío)
+    //    ?5  → texto_producto   (si Some y no vacío); se pasa como "%valor%"
+
+    let mut conditions: Vec<&str> = Vec::new();
+    let mut bind_index: u8 = 1; // ?1 ya reservado para empresa_id
+
+    // ?2 fecha_inicio
+    let bind_fecha_inicio = params.fecha_inicio.as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.to_string());
+    if bind_fecha_inicio.is_some() {
+        bind_index += 1;
+        conditions.push("fc.fecha_emision >= ?2");
+    }
+
+    // ?3 fecha_fin
+    let bind_fecha_fin = params.fecha_fin.as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.to_string());
+    if bind_fecha_fin.is_some() {
+        bind_index += 1;
+        conditions.push("fc.fecha_emision <= ?3");
+    }
+    let _ = bind_index; // evitar warning de variable no usada
+
+    // ?4 tipo_entidad
+    let bind_tipo_entidad = params.tipo_entidad.as_deref()
+        .filter(|s| !s.trim().is_empty() && *s != "Todos")
+        .map(|s| s.to_string());
+
+    // ?5 texto_producto
+    let bind_texto = params.texto_producto.as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| format!("%{}%", s));
+
+    // Componer cláusula WHERE dinámica
+    let mut where_clause = String::from("WHERE fc.empresa_id = ?1");
+    if bind_fecha_inicio.is_some() {
+        where_clause.push_str(" AND fc.fecha_emision >= ?2");
+    }
+    if bind_fecha_fin.is_some() {
+        where_clause.push_str(" AND fc.fecha_emision <= ?3");
+    }
+    if bind_tipo_entidad.is_some() {
+        where_clause.push_str(" AND c.tipo_entidad = ?4");
+    }
+    if bind_texto.is_some() {
+        where_clause.push_str(" AND fl.concepto_descripcion LIKE ?5");
+    }
+
+    let sql = format!(
+        r#"
+        SELECT
+            COALESCE(SUM(DISTINCT fc.base_imponible), 0)  AS total_base_imponible,
+            COALESCE(SUM(DISTINCT fc.total_factura),   0) AS total_facturado,
+            COUNT(DISTINCT fc.id)                         AS num_facturas,
+            COUNT(fl.id)                                  AS num_lineas
+        FROM facturas_cabecera fc
+        JOIN contactos          c  ON c.id = fc.cliente_id
+        JOIN facturas_lineas    fl ON fl.factura_id = fc.id
+        {where_clause}
+        "#
+    );
+
+    let row = sqlx::query(&sql)
+        .bind(params.empresa_id)
+        .bind(bind_fecha_inicio.as_deref())
+        .bind(bind_fecha_fin.as_deref())
+        .bind(bind_tipo_entidad.as_deref())
+        .bind(bind_texto.as_deref())
+        .fetch_one(db)
+        .await?;
+
+    Ok(AdvancedAnalyticsResult {
+        total_base_imponible: row.get::<i64, _>("total_base_imponible"),
+        total_facturado:      row.get::<i64, _>("total_facturado"),
+        num_facturas:         row.get::<i64, _>("num_facturas"),
+        num_lineas:           row.get::<i64, _>("num_lineas"),
+    })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Módulo de Estadística Avanzada y Predictiva
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct AbcClienteRow {
+    pub cliente_nombre: String,
+    pub total_facturado: i64,
+    pub porcentaje_sobre_total: f64,
+    pub porcentaje_acumulado: f64,
+    pub clase_abc: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DsoClienteRow {
+    pub cliente_nombre: String,
+    pub total_facturado: i64,
+    pub retraso_medio_dias: f64,
+    pub riesgo: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct HeatmapCeldaRow {
+    pub anio_mes: String,
+    pub concepto: String,
+    pub total_facturado: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AdvancedStatisticsResult {
+    pub abc: Vec<AbcClienteRow>,
+    pub dso: Vec<DsoClienteRow>,
+    pub heatmap: Vec<HeatmapCeldaRow>,
+}
+
+#[tauri::command]
+pub async fn get_advanced_statistics(
+    state: tauri::State<'_, DbPool>,
+    empresa_id: i64,
+) -> CommandResult<AdvancedStatisticsResult> {
+    get_advanced_statistics_internal(state.inner(), empresa_id)
+        .await
+        .map_err(ApiError::from)
+}
+
+async fn get_advanced_statistics_internal(
+    db: &DbPool,
+    empresa_id: i64,
+) -> AppResult<AdvancedStatisticsResult> {
+    if empresa_id <= 0 {
+        return Err(AppError::Validation(
+            "empresa_id debe ser mayor que cero".to_string(),
+        ));
+    }
+
+    // ── 1. Análisis ABC / Pareto ──────────────────────────────────────────
+    #[derive(Debug, sqlx::FromRow)]
+    struct AbcRow {
+        cliente_nombre: String,
+        total_facturado: i64,
+        porcentaje_sobre_total: f64,
+        porcentaje_acumulado: f64,
+        clase_abc: String,
+    }
+
+    let abc_rows = sqlx::query_as::<_, AbcRow>(
+        r#"
+        WITH ventas AS (
+            SELECT
+                c.nombre AS cliente_nombre,
+                SUM(
+                    CASE WHEN f.total > 0 THEN f.total
+                         ELSE COALESCE(lt.total_calc, 0)
+                    END
+                ) AS total_facturado
+            FROM facturas f
+            JOIN clientes c ON c.id = f.cliente_id
+            LEFT JOIN (
+                SELECT factura_id, SUM(total_linea) AS total_calc
+                FROM lineas_factura GROUP BY factura_id
+            ) lt ON lt.factura_id = f.id
+            WHERE f.empresa_id = ?1 AND f.estado <> 'ANULADA'
+            GROUP BY f.cliente_id, c.nombre
+        ),
+        total_global AS (
+            SELECT COALESCE(SUM(total_facturado), 1) AS grand_total FROM ventas
+        ),
+        ranking AS (
+            SELECT
+                v.cliente_nombre,
+                v.total_facturado,
+                COALESCE(ROUND(v.total_facturado * 100.0 / NULLIF(t.grand_total, 0), 2), 0.0) AS porcentaje_sobre_total,
+                SUM(v.total_facturado)
+                    OVER (ORDER BY v.total_facturado DESC
+                          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                    ) AS acumulado_raw,
+                t.grand_total
+            FROM ventas v, total_global t
+        )
+        SELECT
+            cliente_nombre,
+            total_facturado,
+            porcentaje_sobre_total,
+            COALESCE(ROUND(acumulado_raw * 100.0 / NULLIF(grand_total, 0), 2), 0.0) AS porcentaje_acumulado,
+            CASE
+                WHEN COALESCE(ROUND(acumulado_raw * 100.0 / NULLIF(grand_total, 0), 2), 0.0) <= 80 THEN 'A'
+                WHEN COALESCE(ROUND(acumulado_raw * 100.0 / NULLIF(grand_total, 0), 2), 0.0) <= 95 THEN 'B'
+                ELSE 'C'
+            END AS clase_abc
+        FROM ranking
+        ORDER BY total_facturado DESC
+        "#,
+    )
+    .bind(empresa_id)
+    .fetch_all(db)
+    .await?;
+
+    // ── 2. DSO Predictivo (Days Sales Outstanding) ────────────────────────
+    // Usa fecha_vencimiento como proxy del plazo de cobro. Si no está
+    // informada, asume el plazo estándar de 30 días del campo dias_vencimiento
+    // del cliente (si existe) o 30 días por defecto.
+    #[derive(Debug, sqlx::FromRow)]
+    struct DsoRow {
+        cliente_nombre: String,
+        total_facturado: i64,
+        retraso_medio_dias: f64,
+    }
+
+    let dso_rows = sqlx::query_as::<_, DsoRow>(
+        r#"
+        SELECT
+            c.nombre AS cliente_nombre,
+            SUM(
+                CASE WHEN f.total > 0 THEN f.total
+                     ELSE COALESCE(lt.total_calc, 0)
+                END
+            ) AS total_facturado,
+            AVG(
+                CASE
+                    WHEN f.fecha_vencimiento IS NOT NULL AND f.fecha_vencimiento <> ''
+                    THEN ABS(CAST(JULIANDAY(f.fecha_vencimiento) - JULIANDAY(f.fecha_emision) AS REAL))
+                    ELSE CAST(COALESCE(c.dias_vencimiento, 30) AS REAL)
+                END
+            ) AS retraso_medio_dias
+        FROM facturas f
+        JOIN clientes c ON c.id = f.cliente_id
+        LEFT JOIN (
+            SELECT factura_id, SUM(total_linea) AS total_calc
+            FROM lineas_factura GROUP BY factura_id
+        ) lt ON lt.factura_id = f.id
+        WHERE f.empresa_id = ?1 AND f.estado <> 'ANULADA'
+        GROUP BY f.cliente_id, c.nombre
+        ORDER BY retraso_medio_dias DESC
+        "#,
+    )
+    .bind(empresa_id)
+    .fetch_all(db)
+    .await?;
+
+    // ── 3. Heatmap Temporal (Top‑8 conceptos × mes) ───────────────────────
+    #[derive(Debug, sqlx::FromRow)]
+    struct HeatmapRow {
+        anio_mes: String,
+        concepto: String,
+        total_facturado: i64,
+    }
+
+    let heatmap_rows = sqlx::query_as::<_, HeatmapRow>(
+        r#"
+        WITH top_conceptos AS (
+            SELECT lf.descripcion AS concepto
+            FROM lineas_factura lf
+            JOIN facturas f ON f.id = lf.factura_id
+            WHERE f.empresa_id = ?1 AND f.estado <> 'ANULADA'
+            GROUP BY lf.descripcion
+            ORDER BY SUM(lf.total_linea) DESC
+            LIMIT 8
+        )
+        SELECT
+            strftime('%Y-%m', f.fecha_emision) AS anio_mes,
+            lf.descripcion                     AS concepto,
+            SUM(lf.total_linea)                AS total_facturado
+        FROM lineas_factura lf
+        JOIN facturas f ON f.id = lf.factura_id
+        WHERE f.empresa_id = ?1
+          AND f.estado <> 'ANULADA'
+          AND lf.descripcion IN (SELECT concepto FROM top_conceptos)
+        GROUP BY anio_mes, lf.descripcion
+        ORDER BY anio_mes ASC, total_facturado DESC
+        "#,
+    )
+    .bind(empresa_id)
+    .fetch_all(db)
+    .await?;
+
+    // ── Mapear a structs de respuesta ─────────────────────────────────────
+    let abc: Vec<AbcClienteRow> = abc_rows
+        .into_iter()
+        .map(|r| AbcClienteRow {
+            cliente_nombre: r.cliente_nombre,
+            total_facturado: r.total_facturado,
+            porcentaje_sobre_total: r.porcentaje_sobre_total,
+            porcentaje_acumulado: r.porcentaje_acumulado,
+            clase_abc: r.clase_abc,
+        })
+        .collect();
+
+    let dso: Vec<DsoClienteRow> = dso_rows
+        .into_iter()
+        .map(|r| DsoClienteRow {
+            riesgo: classify_dso_risk(r.retraso_medio_dias),
+            cliente_nombre: r.cliente_nombre,
+            total_facturado: r.total_facturado,
+            retraso_medio_dias: (r.retraso_medio_dias * 10.0).round() / 10.0,
+        })
+        .collect();
+
+    let heatmap: Vec<HeatmapCeldaRow> = heatmap_rows
+        .into_iter()
+        .map(|r| HeatmapCeldaRow {
+            anio_mes: r.anio_mes,
+            concepto: r.concepto,
+            total_facturado: r.total_facturado,
+        })
+        .collect();
+
+    Ok(AdvancedStatisticsResult { abc, dso, heatmap })
+}
+
+fn classify_dso_risk(dias: f64) -> String {
+    if dias <= 30.0 {
+        "Bajo".to_string()
+    } else if dias <= 60.0 {
+        "Medio".to_string()
+    } else {
+        "Alto".to_string()
+    }
 }
 

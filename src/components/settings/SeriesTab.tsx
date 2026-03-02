@@ -9,7 +9,6 @@ import {
   Pencil,
   Trash2,
   CheckCircle2,
-  XCircle,
   Loader2,
   ListChecks,
 } from "lucide-react";
@@ -50,13 +49,13 @@ import { useSessionStore, selectEmpresa } from "@/stores/sessionStore";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
+/** Refleja exactamente el struct SerieRow del backend */
 interface Serie {
   id: number;
   empresa_id: number;
+  nombre: string;
   prefijo: string;
-  descripcion: string | null;
   siguiente_numero: number;
-  activa: boolean;
 }
 
 // ─── Campo de formulario con error ───────────────────────────────────────────
@@ -108,10 +107,9 @@ function SerieDialog({ open, onOpenChange, initial, empresaId, onSaved }: SerieD
     resolver: zodResolver(serieSchema),
     defaultValues: initial
       ? {
+          nombre: initial.nombre,
           prefijo: initial.prefijo,
-          descripcion: initial.descripcion ?? "",
           siguiente_numero: initial.siguiente_numero,
-          activa: initial.activa,
         }
       : defaultSerieValues,
   });
@@ -122,10 +120,9 @@ function SerieDialog({ open, onOpenChange, initial, empresaId, onSaved }: SerieD
       reset(
         initial
           ? {
+              nombre: initial.nombre,
               prefijo: initial.prefijo,
-              descripcion: initial.descripcion ?? "",
               siguiente_numero: initial.siguiente_numero,
-              activa: initial.activa,
             }
           : defaultSerieValues
       );
@@ -140,8 +137,8 @@ function SerieDialog({ open, onOpenChange, initial, empresaId, onSaved }: SerieD
         });
         toast.success(`Serie "${data.prefijo}" actualizada`);
       } else {
-        await invoke("create_serie", {
-          input: { empresa_id: empresaId, ...data },
+        await invoke("crear_serie", {
+          input: { empresa_id: empresaId, nombre: data.nombre, prefijo: data.prefijo },
         });
         toast.success(`Serie "${data.prefijo}" creada`);
       }
@@ -164,24 +161,21 @@ function SerieDialog({ open, onOpenChange, initial, empresaId, onSaved }: SerieD
         </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-2">
+          <FormField label="Nombre" id="nombre" error={errors.nombre?.message} required>
+            <Input
+              id="nombre"
+              placeholder="Facturas generales 2026"
+              {...register("nombre")}
+              className={cn(errors.nombre && "border-destructive")}
+            />
+          </FormField>
+
           <FormField label="Prefijo" id="prefijo" error={errors.prefijo?.message} required>
             <Input
               id="prefijo"
               placeholder="2026, RECT, FAC-A, ..."
               {...register("prefijo")}
               className={cn(errors.prefijo && "border-destructive")}
-            />
-          </FormField>
-
-          <FormField
-            label="Descripción (opcional)"
-            id="descripcion"
-            error={errors.descripcion?.message}
-          >
-            <Input
-              id="descripcion"
-              placeholder="Facturas generales 2026"
-              {...register("descripcion")}
             />
           </FormField>
 
@@ -199,19 +193,6 @@ function SerieDialog({ open, onOpenChange, initial, empresaId, onSaved }: SerieD
               className={cn(errors.siguiente_numero && "border-destructive")}
             />
           </FormField>
-
-          {/* Activa toggle simple */}
-          <div className="flex items-center gap-3">
-            <input
-              id="activa"
-              type="checkbox"
-              {...register("activa")}
-              className="h-4 w-4 rounded border-input accent-primary"
-            />
-            <Label htmlFor="activa" className="cursor-pointer font-normal">
-              Serie activa (disponible al crear facturas)
-            </Label>
-          </div>
 
           <DialogFooter className="pt-2">
             <Button
@@ -319,7 +300,7 @@ export function SeriesTab() {
     isError,
   } = useQuery<Serie[]>({
     queryKey: ["series", empresaId],
-    queryFn: () => invoke<Serie[]>("list_series", { empresaId }),
+    queryFn: () => invoke<Serie[]>("obtener_series", { empresaId }),
     staleTime: 1000 * 60 * 5,
   });
 
@@ -379,23 +360,16 @@ export function SeriesTab() {
       <TableRow key={s.id}>
         <TableCell className="font-mono font-medium">{s.prefijo}</TableCell>
         <TableCell className="text-muted-foreground">
-          {s.descripcion ?? <span className="italic opacity-40">—</span>}
+          {s.nombre || <span className="italic opacity-40">—</span>}
         </TableCell>
         <TableCell className="text-right tabular-nums">
           {s.siguiente_numero.toString().padStart(3, "0")}
         </TableCell>
         <TableCell>
-          {s.activa ? (
-            <Badge variant="default" className="gap-1">
-              <CheckCircle2 className="h-3 w-3" />
-              Activa
-            </Badge>
-          ) : (
-            <Badge variant="secondary" className="gap-1">
-              <XCircle className="h-3 w-3" />
-              Inactiva
-            </Badge>
-          )}
+          <Badge variant="default" className="gap-1">
+            <CheckCircle2 className="h-3 w-3" />
+            Activa
+          </Badge>
         </TableCell>
         <TableCell className="text-right">
           <div className="flex justify-end gap-1">
@@ -448,7 +422,7 @@ export function SeriesTab() {
             <TableHeader>
               <TableRow>
                 <TableHead>Prefijo</TableHead>
-                <TableHead>Descripción</TableHead>
+                <TableHead>Nombre</TableHead>
                 <TableHead className="text-right">Siguiente nº</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>

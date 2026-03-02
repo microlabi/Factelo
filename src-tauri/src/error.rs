@@ -40,10 +40,23 @@ impl From<AppError> for ApiError {
         }
         .to_string();
 
-        Self {
-            code,
-            message: value.to_string(),
-        }
+        // Para errores de base de datos e internos no reenviamos el mensaje
+        // de bajo nivel al frontend (puede contener rutas del sistema o
+        // detalles de SQLite).  Los errores de validación y NOT_FOUND sí se
+        // propagan porque su mensaje es intencional y legible para el usuario.
+        let message = match &value {
+            AppError::Database(_) => {
+                tracing::error!("Error de base de datos (detalle interno): {value}");
+                "Se produjo un error en la base de datos. Consulta los registros de la aplicación para más detalles.".to_string()
+            }
+            AppError::Internal(_) => {
+                tracing::error!("Error interno (detalle interno): {value}");
+                "Se produjo un error interno. Consulta los registros de la aplicación para más detalles.".to_string()
+            }
+            _ => value.to_string(),
+        };
+
+        Self { code, message }
     }
 }
 

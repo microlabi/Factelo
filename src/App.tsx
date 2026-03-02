@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { IntegrityGuard } from "@/components/ui/IntegrityGuard";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -9,14 +9,19 @@ import { SettingsPage } from "@/pages/SettingsPage";
 import { OnboardingPage } from "@/pages/OnboardingPage";
 import { ClientesPage } from "@/pages/ClientesPage";
 import { ProductosPage } from "@/pages/ProductosPage";
+import { AnalyticsDashboard } from "@/pages/AnalyticsDashboard";
+import { AdvancedStatsView } from "@/pages/AdvancedStatsView";
 import { useUpdater } from "@/hooks/useUpdater";
 
 export function App() {
   useUpdater();
+  const Router = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
+    ? HashRouter
+    : BrowserRouter;
 
   return (
     <ErrorBoundary>
-      <BrowserRouter>
+      <Router>
         {/* IntegrityGuard verifica la cadena de hashes en cada arranque.
             Si detecta manipulación, bloquea la UI completamente. */}
         <IntegrityGuard>
@@ -31,6 +36,8 @@ export function App() {
               <Route path="/facturas/nueva" element={<InvoiceNewPage />} />
               <Route path="/clientes" element={<ClientesPage />} />
               <Route path="/productos" element={<ProductosPage />} />
+              <Route path="/analytics" element={<AnalyticsDashboard />} />
+              <Route path="/estadisticas-avanzadas" element={<AdvancedStatsView />} />
               <Route
                 path="/gastos"
                 element={<div className="text-sm text-muted-foreground">Módulo de gastos en siguiente fase.</div>}
@@ -41,7 +48,7 @@ export function App() {
             </Route>
           </Routes>
         </IntegrityGuard>
-      </BrowserRouter>
+      </Router>
     </ErrorBoundary>
   );
 }

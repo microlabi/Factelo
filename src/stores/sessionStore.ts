@@ -59,8 +59,12 @@ export const useSessionStore = create<SessionStore>()(
       name: "factelo-session",
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
-        user: state.user,
-        empresa: state.empresa,
+        // Solo persistimos IDs y nombre para restablecer el contexto de sesión.
+        // El NIF y otros datos sensibles se recargan desde el backend al arrancar.
+        user: state.user ? { id: state.user.id, username: state.user.username } : null,
+        empresa: state.empresa
+          ? { id: state.empresa.id, nombre: state.empresa.nombre }
+          : null,
         isAuthenticated: state.isAuthenticated,
       }),
       onRehydrateStorage: () => (state) => {

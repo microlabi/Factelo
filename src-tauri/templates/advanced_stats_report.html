@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Informe Estadístico Avanzado — {{ empresa_nombre }}</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 10px;
+    color: #1a1a2e;
+    background: #fff;
+    padding: 32px 36px;
+  }
+
+  /* ── Cabecera del informe ───────────────────────────────────────────────── */
+  .report-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 3px solid #6366f1;
+    padding-bottom: 14px;
+    margin-bottom: 24px;
+  }
+  .report-header h1 { font-size: 20px; color: #6366f1; font-weight: 700; }
+  .report-header .meta { text-align: right; color: #555; line-height: 1.6; }
+  .report-header .meta strong { color: #1a1a2e; }
+  .report-tagline { font-size: 11px; color: #6366f1; font-weight: 500; margin-top: 2px; }
+
+  /* ── Secciones ──────────────────────────────────────────────────────────── */
+  .section { margin-bottom: 30px; }
+  .section-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    background: #6366f1;
+    padding: 6px 12px;
+    border-radius: 4px 4px 0 0;
+    margin-bottom: 0;
+  }
+  .section-subtitle {
+    font-size: 9.5px;
+    color: #666;
+    background: #f5f5ff;
+    padding: 4px 12px;
+    border: 1px solid #e0e0f0;
+    border-top: none;
+    margin-bottom: 8px;
+  }
+
+  /* ── Tablas ──────────────────────────────────────────────────────────────── */
+  table { width: 100%; border-collapse: collapse; font-size: 9.5px; }
+  thead tr { background: #f0f0ff; }
+  thead th {
+    padding: 7px 10px;
+    text-align: left;
+    font-weight: 600;
+    color: #333;
+    border-bottom: 2px solid #c7c7f0;
+  }
+  thead th.right { text-align: right; }
+  tbody tr { border-bottom: 1px solid #eee; }
+  tbody tr:hover { background: #fafafa; }
+  tbody td { padding: 6px 10px; vertical-align: middle; }
+  tbody td.right { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody tr:last-child { border-bottom: none; }
+
+  /* ── Badges ABC ─────────────────────────────────────────────────────────── */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 9px;
+    letter-spacing: 0.5px;
+    min-width: 22px;
+    text-align: center;
+  }
+  .badge-A { background: #dcfce7; color: #16a34a; border: 1px solid #86efac; }
+  .badge-B { background: #dbeafe; color: #1d4ed8; border: 1px solid #93c5fd; }
+  .badge-C { background: #f3f4f6; color: #6b7280; border: 1px solid #d1d5db; }
+
+  /* ── Badges DSO ─────────────────────────────────────────────────────────── */
+  .risk-Bajo   { background: #dcfce7; color: #16a34a; border: 1px solid #86efac; }
+  .risk-Medio  { background: #fef9c3; color: #a16207; border: 1px solid #fde047; }
+  .risk-Alto   { background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }
+
+  /* ── Barra de progreso (Pareto) ─────────────────────────────────────────── */
+  .bar-container {
+    background: #f3f3f3;
+    border-radius: 4px;
+    height: 10px;
+    width: 100%;
+    overflow: hidden;
+  }
+  .bar-fill-A { background: #22c55e; height: 10px; border-radius: 4px; }
+  .bar-fill-B { background: #3b82f6; height: 10px; border-radius: 4px; }
+  .bar-fill-C { background: #9ca3af; height: 10px; border-radius: 4px; }
+
+  /* ── Scatter DSO – mini gráfico CSS ────────────────────────────────────── */
+  .scatter-wrapper {
+    padding: 8px 12px;
+    border: 1px solid #e0e0f0;
+    background: #fafafe;
+    border-radius: 0 0 4px 4px;
+  }
+
+  /* ── Heatmap ────────────────────────────────────────────────────────────── */
+  .heatmap-wrapper {
+    overflow-x: auto;
+    border: 1px solid #e0e0f0;
+    border-radius: 0 0 4px 4px;
+  }
+  .heatmap-table { border-collapse: collapse; width: 100%; }
+  .heatmap-table th {
+    background: #f0f0ff;
+    padding: 5px 8px;
+    font-weight: 600;
+    font-size: 9px;
+    text-align: center;
+    white-space: nowrap;
+    border: 1px solid #e0e0f0;
+  }
+  .heatmap-table th.concept-col { text-align: left; min-width: 140px; }
+  .heatmap-table td {
+    padding: 4px 6px;
+    font-size: 8.5px;
+    text-align: right;
+    border: 1px solid #e8e8f8;
+    font-variant-numeric: tabular-nums;
+    min-width: 64px;
+  }
+  .heatmap-table td.concept-cell {
+    text-align: left;
+    font-weight: 500;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Intensidades de calor (0 = sin datos, 1–5 = creciente) */
+  .heat-0 { background: #f8f8ff; color: #bbb; }
+  .heat-1 { background: #dbeafe; color: #1e40af; }
+  .heat-2 { background: #93c5fd; color: #1e3a8a; }
+  .heat-3 { background: #3b82f6; color: #fff; }
+  .heat-4 { background: #1d4ed8; color: #fff; }
+  .heat-5 { background: #1e3a8a; color: #fff; }
+
+  /* ── Pie del informe ────────────────────────────────────────────────────── */
+  .report-footer {
+    margin-top: 30px;
+    padding-top: 10px;
+    border-top: 1px solid #e0e0f0;
+    font-size: 8.5px;
+    color: #888;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  /* ── KPI summary row ────────────────────────────────────────────────────── */
+  .kpi-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .kpi-card {
+    flex: 1;
+    border: 1px solid #e0e0f0;
+    border-radius: 6px;
+    padding: 10px 14px;
+    background: #f8f8ff;
+  }
+  .kpi-card .kpi-label { font-size: 9px; color: #777; margin-bottom: 2px; }
+  .kpi-card .kpi-value { font-size: 15px; font-weight: 700; color: #6366f1; }
+  .kpi-card .kpi-sub   { font-size: 8.5px; color: #555; margin-top: 2px; }
+</style>
+</head>
+<body>
+
+<!-- ── Cabecera ──────────────────────────────────────────────────────────── -->
+<div class="report-header">
+  <div>
+    <h1>Informe Estadístico Avanzado</h1>
+    <div class="report-tagline">Análisis de Pareto · DSO Predictivo · Heatmap Temporal</div>
+  </div>
+  <div class="meta">
+    <strong>{{ empresa_nombre }}</strong><br/>
+    Generado el {{ generated_at }}<br/>
+    <span style="color:#9ca3af;font-size:8.5px;">Factelo — Módulo de Estadística Avanzada</span>
+  </div>
+</div>
+
+<!-- ── KPI summary ───────────────────────────────────────────────────────── -->
+<div class="kpi-row">
+  <div class="kpi-card">
+    <div class="kpi-label">CLIENTES ANALIZADOS</div>
+    <div class="kpi-value">{{ total_clientes }}</div>
+    <div class="kpi-sub">en análisis ABC</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">CLIENTES CLASE A</div>
+    <div class="kpi-value">{{ clientes_a }}</div>
+    <div class="kpi-sub">generan ≥80% del revenue</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">RIESGO COBRO ALTO</div>
+    <div class="kpi-value">{{ clientes_alto_riesgo }}</div>
+    <div class="kpi-sub">clientes con &gt;60 días de plazo</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">MESES CON ACTIVIDAD</div>
+    <div class="kpi-value">{{ total_meses }}</div>
+    <div class="kpi-sub">en el heatmap temporal</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- 1 — ANÁLISIS ABC (PARETO)                                               -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">① Análisis de Pareto – Dependencia de Clientes (Ley 80/20)</div>
+  <div class="section-subtitle">
+    Clientes ordenados de mayor a menor facturación. Clase A ≤ 80 % acumulado · Clase B ≤ 95 % · Clase C resto
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:28px">#</th>
+        <th>Cliente</th>
+        <th class="right">Facturado (€)</th>
+        <th class="right">% s/Total</th>
+        <th class="right">% Acum.</th>
+        <th style="width:180px">Barra</th>
+        <th class="right" style="width:40px">Clase</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in abc %}
+      <tr>
+        <td style="color:#9ca3af">{{ loop.index }}</td>
+        <td style="font-weight:500;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          {{ r.cliente_nombre }}
+        </td>
+        <td class="right">{{ r.total_facturado_fmt }}</td>
+        <td class="right">{{ r.porcentaje_sobre_total }}%</td>
+        <td class="right">{{ r.porcentaje_acumulado }}%</td>
+        <td>
+          <div class="bar-container">
+            <div class="bar-fill-{{ r.clase_abc }}" style="width:{{ r.bar_pct }}%"></div>
+          </div>
+        </td>
+        <td class="right">
+          <span class="badge badge-{{ r.clase_abc }}">{{ r.clase_abc }}</span>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if abc | length == 0 %}
+      <tr><td colspan="7" style="text-align:center;color:#aaa;padding:16px">Sin datos</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- 2 — DSO PREDICTIVO                                                      -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">② DSO Predictivo – Riesgo de Cobro y Tesorería</div>
+  <div class="section-subtitle">
+    Plazo medio de cobro calculado a partir de la fecha de vencimiento de cada factura.
+    Riesgo Bajo ≤ 30 d · Medio ≤ 60 d · Alto &gt; 60 d
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Cliente</th>
+        <th class="right">Facturado (€)</th>
+        <th class="right">Plazo Medio (días)</th>
+        <th class="right">Riesgo</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in dso %}
+      <tr>
+        <td style="font-weight:500;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          {{ r.cliente_nombre }}
+        </td>
+        <td class="right">{{ r.total_facturado_fmt }}</td>
+        <td class="right">{{ r.retraso_medio_dias }} d</td>
+        <td class="right">
+          <span class="badge risk-{{ r.riesgo }}">{{ r.riesgo }}</span>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if dso | length == 0 %}
+      <tr><td colspan="4" style="text-align:center;color:#aaa;padding:16px">Sin datos</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- 3 — HEATMAP TEMPORAL                                                    -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">③ Heatmap Temporal – Ventas por Mes y Concepto</div>
+  <div class="section-subtitle">
+    Top 8 conceptos de facturación por volumen total. Intensidad de color proporcional al importe del mes (€).
+  </div>
+  <div class="heatmap-wrapper">
+    <table class="heatmap-table">
+      <thead>
+        <tr>
+          <th class="concept-col">Concepto</th>
+          {% for mes in meses %}
+          <th>{{ mes }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for fila in heatmap_filas %}
+        <tr>
+          <td class="concept-cell" title="{{ fila.concepto }}">{{ fila.concepto | truncate(length=30) }}</td>
+          {% for celda in fila.celdas %}
+          <td class="heat-{{ celda.nivel }}">
+            {% if celda.valor > 0 %}{{ celda.valor_fmt }}{% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+        {% if heatmap_filas | length == 0 %}
+        <tr><td colspan="20" style="text-align:center;color:#aaa;padding:16px">Sin datos</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Pie ────────────────────────────────────────────────────────────── -->
+<div class="report-footer">
+  <span>{{ empresa_nombre }} · Informe generado con Factelo</span>
+  <span>Documento confidencial · {{ generated_at }}</span>
+</div>
+
+</body>
+</html>
