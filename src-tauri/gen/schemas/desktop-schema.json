@@ -2217,6 +2217,12 @@
           "markdownDescription": "Crea una nueva serie de facturación"
         },
         {
+          "description": "Elimina un cliente",
+          "type": "string",
+          "const": "allow-delete-cliente",
+          "markdownDescription": "Elimina un cliente"
+        },
+        {
           "description": "Exporta el fichero XML de inspección tributaria",
           "type": "string",
           "const": "allow-generar-fichero-inspeccion",
@@ -2235,10 +2241,28 @@
           "markdownDescription": "Genera el XML Facturae e invoca AutoFirma para firmarlo"
         },
         {
+          "description": "Genera el PDF del informe de estadísticas avanzadas",
+          "type": "string",
+          "const": "allow-generate-advanced-stats-pdf",
+          "markdownDescription": "Genera el PDF del informe de estadísticas avanzadas"
+        },
+        {
           "description": "Permite invocar el comando generate_pdf",
           "type": "string",
           "const": "allow-generate-pdf",
           "markdownDescription": "Permite invocar el comando generate_pdf"
+        },
+        {
+          "description": "Obtiene analítica avanzada con filtros",
+          "type": "string",
+          "const": "allow-get-advanced-analytics",
+          "markdownDescription": "Obtiene analítica avanzada con filtros"
+        },
+        {
+          "description": "Obtiene estadísticas avanzadas (ABC, DSO, Heatmap)",
+          "type": "string",
+          "const": "allow-get-advanced-statistics",
+          "markdownDescription": "Obtiene estadísticas avanzadas (ABC, DSO, Heatmap)"
         },
         {
           "description": "Permite invocar el comando insert_factura",
@@ -2287,6 +2311,12 @@
           "type": "string",
           "const": "allow-obtener-series",
           "markdownDescription": "Lista las series de facturación de una empresa"
+        },
+        {
+          "description": "Actualiza un cliente existente",
+          "type": "string",
+          "const": "allow-update-cliente",
+          "markdownDescription": "Actualiza un cliente existente"
         },
         {
           "description": "Verifica la integridad de la cadena de hashes del registro inalterable",

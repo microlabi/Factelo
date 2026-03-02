@@ -49,6 +49,16 @@ description = "Crea un cliente"
 commands.allow = ["crear_cliente"]
 
 [[permission]]
+identifier = "allow-update-cliente"
+description = "Actualiza un cliente existente"
+commands.allow = ["update_cliente"]
+
+[[permission]]
+identifier = "allow-delete-cliente"
+description = "Elimina un cliente"
+commands.allow = ["delete_cliente"]
+
+[[permission]]
 identifier = "allow-obtener-productos"
 description = "Lista productos y servicios"
 commands.allow = ["obtener_productos"]
@@ -72,6 +82,21 @@ commands.allow = ["listar_facturas"]
 identifier = "allow-obtener-factura-detalle"
 description = "Obtiene el detalle completo de una factura con sus líneas"
 commands.allow = ["obtener_factura_detalle"]
+
+[[permission]]
+identifier = "allow-get-advanced-analytics"
+description = "Obtiene analítica avanzada con filtros"
+commands.allow = ["get_advanced_analytics"]
+
+[[permission]]
+identifier = "allow-get-advanced-statistics"
+description = "Obtiene estadísticas avanzadas (ABC, DSO, Heatmap)"
+commands.allow = ["get_advanced_statistics"]
+
+[[permission]]
+identifier = "allow-generate-advanced-stats-pdf"
+description = "Genera el PDF del informe de estadísticas avanzadas"
+commands.allow = ["generate_advanced_stats_pdf"]
 
 [[permission]]
 identifier = "allow-generar-qr-legal"

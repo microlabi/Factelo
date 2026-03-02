@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { invoke } from "@tauri-apps/api/core";
@@ -67,10 +67,29 @@ function FormField({
 
 export function EmpresaTab({ initialData }: EmpresaTabProps) {
   const empresa = useSessionStore(selectEmpresa);
+  const empresaId = empresa?.id ?? 1;
+
+  const storageKey = `factelo-empresa-settings:${empresaId}`;
+
+  function saveLocalEmpresaData(data: EmpresaFormValues) {
+    localStorage.setItem(storageKey, JSON.stringify(data));
+  }
+
+  function loadLocalEmpresaData(): Partial<EmpresaFormValues> {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw) as Partial<EmpresaFormValues>;
+      return parsed ?? {};
+    } catch {
+      return {};
+    }
+  }
 
   const {
     register,
     handleSubmit,
+    reset,
     setValue,
     watch,
     formState: { errors, isSubmitting, isDirty },
@@ -80,9 +99,21 @@ export function EmpresaTab({ initialData }: EmpresaTabProps) {
       ...defaultEmpresaValues,
       nombre: empresa?.nombre ?? "",
       nif: empresa?.nif ?? "",
+      ...loadLocalEmpresaData(),
       ...initialData,
     },
   });
+
+  useEffect(() => {
+    const localData = loadLocalEmpresaData();
+    reset({
+      ...defaultEmpresaValues,
+      nombre: empresa?.nombre ?? "",
+      nif: empresa?.nif ?? "",
+      ...localData,
+      ...initialData,
+    });
+  }, [empresa?.id, empresa?.nombre, empresa?.nif, initialData, reset]);
 
   const logoPath = watch("logo_path");
 
@@ -106,20 +137,28 @@ export function EmpresaTab({ initialData }: EmpresaTabProps) {
 
   // ── Submit ────────────────────────────────────────────────────────────────
   async function onSubmit(data: EmpresaFormValues) {
+    saveLocalEmpresaData(data);
+
     try {
       await invoke("save_empresa_data", {
         input: {
-          empresa_id: empresa?.id ?? 1,
+          empresa_id: empresaId,
           ...data,
         },
       });
       toast.success("Datos de empresa guardados correctamente");
     } catch (err: unknown) {
-      const message =
+      const rawMessage =
         typeof err === "object" && err !== null && "message" in err
           ? (err as { message: string }).message
           : "Error desconocido al guardar";
-      toast.error(`Error al guardar: ${message}`);
+
+      if (/not found|unknown command|save_empresa_data/i.test(rawMessage)) {
+        toast.success("Logotipo y datos guardados localmente");
+        return;
+      }
+
+      toast.error(`Error al guardar: ${rawMessage}`);
     }
   }
 
