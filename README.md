@@ -1,4 +1,6 @@
 # Factelo
+<img width="896" height="617" alt="Dashboard" src="https://github.com/user-attachments/assets/55f3121e-4d75-4a21-9eba-66d033033f0d" />
+-
 
 Sistema de facturación electrónica multiplataforma, construido con React, Vite, Rust y Tauri. Este proyecto está orientado a desarrolladores que buscan modificar, distribuir y rentabilizar la aplicación, manteniendo siempre el reconocimiento de los derechos de autor del código original.
 
@@ -134,6 +136,9 @@ Para más detalles, revisa `src-tauri/src/commands.rs` y la documentación de Ta
 ## Funcionalidades principales
 
 ### 1. Facturación electrónica
+
+<img width="1048" height="617" alt="crear factura" src="https://github.com/user-attachments/assets/450e9457-bdcc-4b25-b363-83bd1427ede7" />
+
 - Crear, editar, emitir y anular facturas.
 - Soporte para facturas rectificativas y entidades públicas (firma + registro).
 - Selección de cliente, serie, fecha y conceptos facturados.
@@ -152,6 +157,9 @@ Para más detalles, revisa `src-tauri/src/commands.rs` y la documentación de Ta
 - Selección rápida en la factura.
 
 ### 4. Series de facturación
+
+<img width="1048" height="617" alt="crear factura" src="https://github.com/user-attachments/assets/5a7c9214-0035-44ea-8264-ddd515394f68" />
+
 - Configuración de series (prefijo, numeración).
 - Asignación de serie a cada factura.
 
@@ -160,9 +168,14 @@ Para más detalles, revisa `src-tauri/src/commands.rs` y la documentación de Ta
 - Multiempresa: cada usuario puede gestionar varias empresas.
 
 ### 6. Dashboard y analítica
+
+<img width="896" height="616" alt="analitica" src="https://github.com/user-attachments/assets/a70c6c74-a569-4fcb-b484-9ca63d42e88c" />
+
 - KPIs: facturación total, IVA repercutido/soportado, facturas pendientes, emitidas en el mes, variación mensual.
 - Gráficas de ingresos, gastos y evolución temporal.
 - Estadísticas avanzadas: ABC de clientes, DSO (retraso medio de cobro), heatmap de facturación.
+
+<img width="898" height="614" alt="estadisticas" src="https://github.com/user-attachments/assets/abe37e81-826e-4479-a0e4-f0ee7d42ce8e" />
 
 ### 7. Gastos
 - Registro y gestión de gastos e IVA soportado.
@@ -197,3 +210,4 @@ Para más detalles, revisa `src-tauri/src/commands.rs` y la documentación de Ta
 - Hooks personalizados para lógica reutilizable.
 
 ---
+Imágnes de la interfaz:
