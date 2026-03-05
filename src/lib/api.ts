@@ -414,3 +414,16 @@ export const api = {
   ): Promise<string> =>
     invoke("generate_advanced_stats_pdf", { input }),
 };
+
+// ─── AEAT/Verifactu ─────────────────────────────────────────────────────────
+export async function enviarFacturaAEAT(
+  facturaId: number,
+  empresaId: number,
+  entorno: "sandbox" | "produccion" = "sandbox"
+): Promise<string> {
+  return await invoke<string>("enviar_factura_a_aeat", {
+    factura_id: facturaId,
+    empresa_id: empresaId,
+    entorno,
+  });
+}

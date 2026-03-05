@@ -283,6 +283,25 @@ export function FacturasPage() {
     }
   }
 
+  async function handleEnviarAEAT(f: FacturaRow, entorno: "sandbox" | "produccion" = "sandbox") {
+    if (!empresa) return;
+    setActionError(null);
+    toast.info("Enviando factura a AEAT...", { duration: 2000 });
+    try {
+      const respuesta = await api.enviarFacturaAEAT(f.id, empresa.id, entorno);
+      toast.success("Factura enviada a AEAT", {
+        description: respuesta,
+        duration: 6000,
+      });
+    } catch (err: unknown) {
+      const msg = typeof err === "object" && err !== null && "message" in err
+        ? (err as { message: string }).message
+        : String(err);
+      setActionError(msg);
+      toast.error("Error al enviar a AEAT", { description: msg });
+    }
+  }
+
   return (
     <div className="space-y-5">
       {/* guard empresa */}
@@ -588,6 +607,24 @@ export function FacturasPage() {
                           </TooltipTrigger>
                           <TooltipContent side="top" className="text-xs">
                             QR de verificación tributaria (AEAT)
+                          </TooltipContent>
+                        </Tooltip>
+                        {/* Enviar a AEAT/Verifactu */}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={cn(
+                                "size-7 opacity-0 group-hover:opacity-100 transition-opacity text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40"
+                              )}
+                              onClick={() => handleEnviarAEAT(f, "sandbox")}
+                            >
+                              <ExternalLink className="size-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="text-xs">
+                            Enviar factura a AEAT (sandbox)
                           </TooltipContent>
                         </Tooltip>
                       </div>

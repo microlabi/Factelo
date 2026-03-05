@@ -1221,7 +1221,7 @@ pub struct ClienteRow {
     pub nif: Option<String>,
     /// Nombre comercial (puede diferir de la razón social)
     pub nombre_comercial: Option<String>,
-    /// Tipo de entidad: "Empresa" | "Autónomo" | "Entidad_Publica"
+    /// Tipo de entidad: "Empresa" | "Autónomo" | "Entidad Pública"
     pub tipo_entidad: String,
     pub email: Option<String>,
     pub telefono: Option<String>,
@@ -1240,7 +1240,7 @@ pub struct ClienteRow {
     pub metodo_pago_defecto: Option<String>,
     pub dias_vencimiento: i64,
     pub iban_cuenta: Option<String>,
-    // ── Códigos DIR3 (obligatorios si tipo_entidad = "Entidad_Publica") ──
+    // ── Códigos DIR3 (obligatorios si tipo_entidad = "Entidad Pública") ──
     pub dir3_oficina_contable: Option<String>,
     pub dir3_organo_gestor: Option<String>,
     pub dir3_unidad_tramitadora: Option<String>,
@@ -1982,7 +1982,6 @@ async fn get_advanced_analytics_internal(
     //    ?3  → fecha_fin        (si Some)
     //    ?4  → tipo_entidad     (si Some y no vacío)
     //    ?5  → texto_producto   (si Some y no vacío); se pasa como "%valor%"
-
     let mut conditions: Vec<&str> = Vec::new();
     let mut bind_index: u8 = 1; // ?1 ya reservado para empresa_id
 
