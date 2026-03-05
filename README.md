@@ -210,4 +210,3 @@ Para más detalles, revisa `src-tauri/src/commands.rs` y la documentación de Ta
 - Hooks personalizados para lógica reutilizable.
 
 ---
-Imágnes de la interfaz:
