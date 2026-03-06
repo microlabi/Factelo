@@ -1,6 +1,4 @@
-🌐 **Languages:** [🇪🇸 Español](README.md) | [🇬🇧 English](README.en.md)
-
----
+🌐 **Languages:** [🇪🇸 Español](README.md) | [🇬🇧 English](README.en.md) | [🇨🇳 中文](README.zh.md) | [🇧🇷 Português](README.pt.md)
 
 # Factelo
 <img width="896" height="617" alt="Dashboard" src="https://github.com/user-attachments/assets/55f3121e-4d75-4a21-9eba-66d033033f0d" />
